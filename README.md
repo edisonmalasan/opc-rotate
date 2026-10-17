@@ -17,6 +17,8 @@ npm install
 npm run tauri -- dev
 ```
 
+The dev command selects the first available loopback port from 1420 to 1499 and gives the same URL to Vite and Tauri. If another process is using 1420, the app starts on the next free port without stopping that process. Use the npm command above for this coordinated fallback. `npm run dev` starts only Vite and also falls back to the next available port.
+
 To build a Windows installer:
 
 ```powershell

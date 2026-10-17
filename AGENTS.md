@@ -11,6 +11,7 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 | Concern | Source |
 | --- | --- |
 | Dashboard and styles | `src/main.tsx`, `src/styles.css` |
+| Dev server port selection | `scripts/tauri.mjs`, `vite.config.ts` |
 | State, polling, incident queue, recovery | `src-tauri/src/lib.rs` |
 | OpenCode shared service | `src-tauri/src/opencode.rs` |
 | Orca terminals | `src-tauri/src/orca.rs` |
@@ -34,6 +35,7 @@ npm run tauri -- build
 ```
 
 `npm run build` includes TypeScript checking. `npm test` runs Rust tests. The Tauri build creates an NSIS installer under `src-tauri/target/release/bundle/nsis/`.
+`npm run tauri -- dev` selects an available port from 1420 to 1499 and passes it to both Vite and Tauri; use this command for desktop development when 1420 may be occupied.
 
 ## Boundaries
 

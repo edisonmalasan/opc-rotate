@@ -22,6 +22,7 @@ Outcome: a source build and installer work on the target Windows setup.
 - [x] Type-check and bundle the web UI with `npm run build`.
 - [x] Pass the Rust test suite (`npm test`, 17 tests at the last verified run).
 - [x] Build the updated NSIS installer with `npm run tauri -- build` after active-session filtering, Orca grouping, and queued-delivery changes.
+- [x] Start a second desktop dev run when port 1420 is occupied. The npm Tauri command selected 1421 for both Vite and Tauri; the page returned HTTP 200, and the existing process on 1420 remained active.
 - [ ] Visually verify the updated project groups in the native window. The capture during this pass was covered by another fullscreen application.
 - [ ] Verify outside OpenCode session continuation during a real rate-limit event. The local shared service has real failed `provider.quota` messages with status 429 and matches the parser; outside-session prompt submission has mock API coverage only.
 

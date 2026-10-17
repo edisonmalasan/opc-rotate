@@ -6,6 +6,8 @@
 
 **Current focus:** verify the updated project groups visually in the native window and observe outside-session continuation during a real rate-limit event. Live-session filtering and the per-project layout are implemented; 17 Rust tests, the frontend build, and the updated NSIS installer build pass. An Orca live recovery succeeded earlier. Native screenshot capture was covered by another fullscreen application.
 
+The desktop dev command now selects an available port from 1420 to 1499 and passes it to both Vite and Tauri. With an existing Vite process on 1420, a second desktop dev run launched on 1421 and served the app there. Direct `npm run dev` also falls back to the next available port.
+
 Read-only inspection of the local OpenCode service confirmed the expected `idle` / `failed` / `provider.quota` / HTTP 429 message shape. No live outside-session continuation has been sent by this app yet.
 
 ## Where to look
@@ -15,6 +17,7 @@ Read-only inspection of the local OpenCode service confirmed the expected `idle`
 | User behavior and limitations | `README.md`, `PRODUCT.md` |
 | Milestones and verification | `docs/ROADMAP.md` |
 | Dashboard and presentation | `src/main.tsx`, `src/styles.css` |
+| Desktop dev port handoff | `scripts/tauri.mjs`, `vite.config.ts`, `package.json` |
 | Polling, recovery, settings and history | `src-tauri/src/lib.rs` |
 | Session discovery and prompts | `src-tauri/src/opencode.rs`, `src-tauri/src/orca.rs` |
 | Relay selection and VPN connection | `src-tauri/src/vpngate.rs`, `src-tauri/src/softether.rs` |
