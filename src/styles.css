@@ -7,16 +7,23 @@
     system-ui,
     sans-serif;
   font-optical-sizing: auto;
-  color: #ebedf1;
+  color: #edf1f7;
   background: #1d1f24;
   color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --text: #ebedf1;
-  --muted: #a1a5af;
-  --dim: #8b95a6;
-  --line: #ffffff0d;
+  --text: #edf1f7;
+  --muted: #b4bdcb;
+  --dim: #9faabc;
+  --line: #ffffff12;
+  --font-small: 0.6875rem;
+  --font-caption: 0.75rem;
+  --font-label: 0.8125rem;
+  --font-body: 0.875rem;
+  --font-heading: 1.25rem;
+  --session-status-width: 128px;
+  --session-time-width: 72px;
   --blue: #91b8f6;
   --green: #88c8a5;
   --amber: #e5b885;
@@ -35,8 +42,8 @@ body,
 }
 body {
   min-width: 360px;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: var(--font-body);
+  line-height: 1.5;
   overflow: hidden;
 }
 button,
@@ -52,7 +59,7 @@ button {
 }
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 0.55;
 }
 button,
 input,
@@ -101,8 +108,8 @@ button:focus-visible {
   overflow: hidden;
 }
 .sidebar {
-  width: 216px;
-  flex: 0 0 216px;
+  width: 224px;
+  flex: 0 0 224px;
   display: flex;
   flex-direction: column;
   background: #17191de8;
@@ -137,13 +144,13 @@ button:focus-visible {
   gap: 1px;
 }
 .app-identity strong {
-  font-size: 14px;
+  font-size: var(--font-body);
   font-weight: 650;
   letter-spacing: -0.02em;
 }
 .app-identity small {
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .main-nav,
 .project-nav {
@@ -158,14 +165,14 @@ button:focus-visible {
   gap: 10px;
   min-width: 0;
   width: 100%;
-  min-height: 36px;
+  min-height: 40px;
   padding: 7px 10px;
-  color: #a7acb7;
+  color: var(--muted);
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--font-label);
 }
 .main-nav button > svg {
   color: #9299a6;
@@ -181,7 +188,7 @@ button:focus-visible {
 }
 .main-nav button small,
 .project-nav button small {
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
@@ -220,7 +227,7 @@ button:focus-visible {
   padding: 0 22px;
   margin-bottom: 8px;
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--font-caption);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -232,7 +239,7 @@ button:focus-visible {
   margin-top: 27px;
 }
 .project-nav button {
-  font-size: 12px;
+  font-size: var(--font-label);
   min-height: 34px;
 }
 .project-nav button > svg {
@@ -250,7 +257,7 @@ button:focus-visible {
 .nav-empty {
   margin: 4px 10px 0;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   line-height: 1.6;
 }
 .sidebar-bottom {
@@ -268,7 +275,7 @@ button:focus-visible {
   border-radius: 6px;
   color: #a1a8b5;
   background: transparent;
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-align: left;
 }
 .prompt-settings svg {
@@ -280,7 +287,7 @@ button:focus-visible {
   align-items: center;
   gap: 7px;
   margin: 14px 10px 0;
-  font-size: 10px;
+  font-size: var(--font-caption);
   color: var(--dim);
 }
 
@@ -299,7 +306,7 @@ button:focus-visible {
   gap: 18px;
   height: 73px;
   flex: 0 0 auto;
-  padding: 0 25px;
+  padding: 0 24px;
   background: #22242a;
   border-bottom: 1px solid #0c0e1250;
 }
@@ -313,7 +320,7 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 19px;
+  font-size: var(--font-heading);
   line-height: 1.2;
   letter-spacing: -0.035em;
   font-weight: 650;
@@ -326,20 +333,20 @@ button:focus-visible {
   border: 1px solid #91b8f62b;
   border-radius: 4px;
   white-space: nowrap;
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 16px;
 }
 .search-field {
   display: flex;
   align-items: center;
   gap: 7px;
-  width: 204px;
-  min-height: 30px;
-  padding: 0 9px;
+  width: 220px;
+  min-height: 36px;
+  padding: 0 11px;
   color: var(--dim);
   border: 1px solid #0b0e1480;
   border-top-color: #11131a;
@@ -360,7 +367,7 @@ button:focus-visible {
   padding: 5px 0;
   color: var(--text);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--font-label);
 }
 .search-field input::placeholder {
   color: var(--dim);
@@ -372,8 +379,8 @@ button:focus-visible {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  height: 18px;
-  width: 18px;
+  height: 28px;
+  width: 28px;
   padding: 0;
   color: #8791a1;
   background: none;
@@ -383,27 +390,28 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 6px 0;
-  color: #a5abb7;
+  min-height: 36px;
+  padding: 6px 2px;
+  color: var(--dim);
   background: none;
   border: 0;
-  font-size: 11px;
+  font-size: var(--font-caption);
   white-space: nowrap;
 }
 .switch-track {
   display: flex;
   align-items: center;
-  width: 29px;
-  height: 17px;
-  padding: 2px;
+  width: 36px;
+  height: 22px;
+  padding: 3px;
   background: #424650;
   border: 1px solid #ffffff08;
   border-radius: 20px;
   transition: background-color 140ms ease;
 }
 .switch-track span {
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #d8dce4;
   box-shadow: 0 1px 2px #0004;
@@ -413,7 +421,7 @@ button:focus-visible {
   background: #78a5e6;
 }
 .enabled .switch-track span {
-  transform: translateX(12px);
+  transform: translateX(14px);
   background: #fff;
 }
 .monitor-control:focus-visible .switch-track span {
@@ -455,14 +463,14 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #d5dbe4;
-  font-size: 13px;
+  color: var(--text);
+  font-size: var(--font-body);
   font-weight: 550;
 }
 .route-copy > span {
   overflow: hidden;
-  color: #8a919e;
-  font-size: 11px;
+  color: var(--dim);
+  font-size: var(--font-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -485,33 +493,35 @@ button:focus-visible {
 }
 .route-address > span {
   color: var(--dim);
-  font-size: 9px;
+  font-size: var(--font-caption);
 }
 .route-address strong {
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 450;
   letter-spacing: 0.01em;
-  color: #adb6c5;
+  color: var(--dim);
 }
 .route-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 0 6px 16px;
-  color: #9aaac2;
+  min-height: 34px;
+  padding: 7px 0 7px 16px;
+  color: #b7cae6;
   background: none;
   border: 0;
   border-left: 1px solid #ffffff0c;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .quiet-button {
+  min-height: 34px;
   padding: 6px 9px;
   border: 1px solid #ffffff12;
   border-radius: 5px;
   background: transparent;
-  color: #969ead;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: var(--font-caption);
 }
 .connection-notice,
 .error-banner {
@@ -523,7 +533,7 @@ button:focus-visible {
   color: #9eacc0;
   background: #283347;
   border-bottom: 1px solid #314058;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .error-banner {
   color: #e6b893;
@@ -562,13 +572,13 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 25px;
-  padding: 4px 12px;
+  min-height: 32px;
+  padding: 5px 12px;
   color: var(--dim);
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
-  font-size: 10px;
+  font-size: var(--font-caption);
   font-weight: 550;
   white-space: nowrap;
 }
@@ -580,12 +590,12 @@ button:focus-visible {
 }
 .segmented-control button > span {
   color: #edc397;
-  font-size: 9px;
+  font-size: var(--font-small);
   font-variant-numeric: tabular-nums;
 }
 .view-count {
-  color: #8b93a2;
-  font-size: 11px;
+  color: var(--dim);
+  font-size: var(--font-caption);
 }
 .workspace-body {
   flex: 1;
@@ -603,12 +613,14 @@ button:focus-visible {
 }
 .list-column-labels {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 113px 65px;
+  grid-template-columns: minmax(0, 1fr) var(--session-status-width) var(
+      --session-time-width
+    );
   gap: 10px;
   padding: 11px 45px 11px 25px;
-  color: #89919f;
+  color: var(--dim);
   border-bottom: 1px solid #ffffff06;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .list-column-labels > span:last-child {
   text-align: right;
@@ -638,8 +650,8 @@ button:focus-visible {
   flex: 0 0 auto;
 }
 .group-title strong {
-  color: #bfc5d0;
-  font-size: 12px;
+  color: #d2d9e4;
+  font-size: var(--font-label);
   font-weight: 600;
   overflow: hidden;
   white-space: nowrap;
@@ -648,7 +660,7 @@ button:focus-visible {
 .group-title > span {
   margin-left: 2px;
   color: var(--dim);
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .group-source {
   flex: 0 0 auto;
@@ -656,14 +668,14 @@ button:focus-visible {
   border: 1px solid #ffffff0b;
   border-radius: 4px;
   color: var(--dim);
-  font-size: 9px;
+  font-size: var(--font-small);
   font-style: normal;
   font-weight: 500;
   white-space: nowrap;
 }
 .group-heading > small {
-  color: #838d9c;
-  font-size: 10px;
+  color: var(--dim);
+  font-size: var(--font-caption);
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -675,7 +687,7 @@ button:focus-visible {
   align-items: center;
   gap: 12px;
   width: calc(100% - 22px);
-  min-height: 67px;
+  min-height: 76px;
   margin: 0 11px;
   padding: 12px 13px;
   border: 1px solid transparent;
@@ -685,7 +697,7 @@ button:focus-visible {
 }
 .session-item.selected {
   background: #29384f;
-  border-color: #8aaee914;
+  border-color: #8aaee94d;
 }
 .session-symbol {
   display: grid;
@@ -693,7 +705,7 @@ button:focus-visible {
   flex: 0 0 auto;
   width: 32px;
   height: 35px;
-  color: #8792a4;
+  color: var(--dim);
   border: 1px solid #ffffff0a;
   background: #ffffff03;
   border-radius: 7px;
@@ -718,13 +730,17 @@ button:focus-visible {
   gap: 4px;
 }
 .session-item-copy > strong {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  color: #d4d9e2;
-  font-size: 13px;
+  color: #e0e6ef;
+  font-size: var(--font-body);
   font-weight: 550;
   letter-spacing: -0.012em;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.45;
 }
 .selected .session-item-copy > strong {
   color: #edf3ff;
@@ -733,23 +749,24 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #8d96a6;
-  font-size: 10px;
+  color: var(--dim);
+  font-size: var(--font-caption);
 }
 .selected .session-item-copy small {
-  color: #93a7c5;
+  color: #b9cbea;
 }
 .session-state {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #a1a9b6;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: var(--font-caption);
   white-space: nowrap;
 }
 .session-state i {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: #728174;
 }
@@ -766,19 +783,19 @@ button:focus-visible {
   background: #89ade5;
 }
 .session-item .session-state {
-  width: 113px;
-  flex: 0 0 113px;
+  width: var(--session-status-width);
+  flex: 0 0 var(--session-status-width);
 }
 .session-item time {
-  width: 65px;
-  flex: 0 0 65px;
-  color: #8994a7;
-  font-size: 10px;
+  width: var(--session-time-width);
+  flex: 0 0 var(--session-time-width);
+  color: var(--dim);
+  font-size: var(--font-caption);
   text-align: right;
   white-space: nowrap;
 }
 .selected time {
-  color: #92a3be;
+  color: #b9cbea;
 }
 .row-chevron {
   color: var(--dim);
@@ -796,8 +813,8 @@ button:focus-visible {
   flex: 0 0 auto;
   padding: 10px 25px;
   border-top: 1px solid #ffffff05;
-  color: #8792a4;
-  font-size: 10px;
+  color: var(--dim);
+  font-size: var(--font-caption);
 }
 .session-discovery-notice {
   display: flex;
@@ -807,7 +824,7 @@ button:focus-visible {
   padding: 12px 25px;
   border-top: 1px solid #ffffff08;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   line-height: 1.5;
 }
 .session-discovery-notice svg {
@@ -816,8 +833,8 @@ button:focus-visible {
 }
 
 .inspector {
-  width: 292px;
-  flex: 0 0 292px;
+  width: 312px;
+  flex: 0 0 312px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -828,17 +845,17 @@ button:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 39px;
+  min-height: 46px;
   padding: 7px 18px 7px 21px;
   border-bottom: 1px solid #ffffff05;
-  color: #9aa3b3;
-  font-size: 11px;
+  color: var(--dim);
+  font-size: var(--font-caption);
 }
 .icon-button {
   display: grid;
   place-items: center;
-  height: 25px;
-  width: 25px;
+  height: 30px;
+  width: 30px;
   padding: 0;
   color: #818da0;
   background: transparent;
@@ -852,14 +869,14 @@ button:focus-visible {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 20px 21px 10px;
+  padding: 24px 24px 12px;
 }
 .inspector-title {
   margin: 0 0 12px;
   color: #e5eaf2;
-  font-size: 19px;
+  font-size: var(--font-heading);
   line-height: 1.3;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.025em;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -868,10 +885,11 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .inspector-session-meta > span:last-child {
-  color: #8d96a6;
-  font-size: 10px;
+  color: var(--dim);
+  font-size: var(--font-caption);
 }
 .relay-country-large + .inspector-title {
   margin-top: 18px;
@@ -888,7 +906,7 @@ button:focus-visible {
   justify-content: space-between;
   gap: 12px;
   margin-top: 10px;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .detail-list > div:first-child {
   margin-top: 0;
@@ -902,13 +920,13 @@ button:focus-visible {
   text-align: right;
 }
 .inspector-section {
-  margin: 20px 0;
+  margin: 24px 0;
 }
 .inspector-section h3 {
   margin: 0 0 9px;
-  color: #939dad;
-  font-size: 11px;
-  font-weight: 550;
+  color: var(--dim);
+  font-size: var(--font-caption);
+  font-weight: 600;
 }
 .project-location {
   display: flex;
@@ -917,7 +935,7 @@ button:focus-visible {
   color: #aab9ce;
 }
 .project-location strong {
-  font-size: 12px;
+  font-size: var(--font-label);
   font-weight: 500;
 }
 .project-location svg {
@@ -926,9 +944,8 @@ button:focus-visible {
 }
 .path-text {
   margin: 6px 0 0;
-  color: #8b95a6;
-  font-family: Consolas, ui-monospace, monospace;
-  font-size: 10px;
+  color: var(--dim);
+  font-size: var(--font-caption);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -936,13 +953,13 @@ button:focus-visible {
   display: flex;
   align-items: start;
   gap: 8px;
-  padding: 10px;
+  padding: 12px;
   margin: 0;
-  background: #d3a16e09;
-  border: 1px solid #d3a16e21;
-  border-radius: 6px;
-  color: #d6b38e;
-  font-size: 12px;
+  background: #332b25;
+  border: 1px solid #785b3e;
+  border-radius: 8px;
+  color: #f0cda7;
+  font-size: var(--font-label);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -960,33 +977,34 @@ button:focus-visible {
 .text-button {
   color: #9bb9e9;
   border: 0;
-  padding: 0;
+  min-height: 28px;
+  padding: 3px 4px;
   background: none;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .prompt-preview {
   margin: 0;
-  color: #b2bac8;
-  font-size: 12px;
+  color: #d2d9e4;
+  font-size: var(--font-body);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .detail-caption {
   display: block;
-  color: #8b96a8;
-  font-size: 10px;
+  color: var(--dim);
+  font-size: var(--font-caption);
   margin-top: 9px;
 }
 .inspector-bottom {
   flex: 0 0 auto;
-  padding: 17px 20px;
+  padding: 18px 24px;
   border-top: 1px solid #ffffff08;
   background: #22252c;
 }
 .inspector-bottom > p {
   margin: 10px 0 0;
-  color: #8a97ac;
-  font-size: 10px;
+  color: var(--dim);
+  font-size: var(--font-caption);
   line-height: 1.6;
   text-align: center;
 }
@@ -996,13 +1014,13 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 32px;
-  padding: 7px 12px;
+  min-height: 38px;
+  padding: 8px 14px;
   border: 1px solid #ffffff10;
   border-radius: 6px;
   color: #d0d8e5;
   background: #343a46;
-  font-size: 11px;
+  font-size: var(--font-label);
   font-weight: 550;
   box-shadow:
     0 1px 2px #0002,
@@ -1024,9 +1042,9 @@ button:focus-visible {
   width: 100%;
 }
 .secondary-button.compact {
-  min-height: 29px;
+  min-height: 34px;
   padding: 5px 10px;
-  font-size: 10px;
+  font-size: var(--font-label);
 }
 .empty-state {
   min-height: 220px;
@@ -1044,15 +1062,15 @@ button:focus-visible {
 }
 .empty-state h2 {
   margin: 0 0 7px;
-  color: #929fb3;
-  font-size: 13px;
+  color: var(--dim);
+  font-size: var(--font-body);
   font-weight: 550;
 }
 .empty-state p {
   max-width: 290px;
   margin: 0;
-  color: #8d98ab;
-  font-size: 12px;
+  color: var(--dim);
+  font-size: var(--font-label);
   line-height: 1.8;
 }
 .empty-inspector .empty-state {
@@ -1073,7 +1091,7 @@ button:focus-visible {
 }
 .relay-sort label {
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .relay-sort select {
   color: #b7c5dc;
@@ -1081,7 +1099,7 @@ button:focus-visible {
   border: 1px solid #ffffff0c;
   border-radius: 5px;
   padding: 5px 8px;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .relay-list-pane {
   flex: 1;
@@ -1109,7 +1127,7 @@ button:focus-visible {
   color: var(--dim);
   background: #1d1f24;
   text-align: right;
-  font-size: 9px;
+  font-size: var(--font-small);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1129,7 +1147,7 @@ button:focus-visible {
   height: 65px;
   border-bottom: 1px solid #ffffff05;
   color: #9caec9;
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-align: right;
   white-space: nowrap;
 }
@@ -1139,7 +1157,7 @@ button:focus-visible {
 }
 .relay-table td.ip-column {
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--font-caption);
   text-align: left;
 }
 .relay-table tr.selected td {
@@ -1147,7 +1165,7 @@ button:focus-visible {
   color: #c2d2ed;
 }
 .relay-table tr.selected td:first-child {
-  box-shadow: inset 2px 0 #87aeed;
+  box-shadow: inset 1px 0 #87aeed;
 }
 .relay-select {
   display: flex;
@@ -1170,7 +1188,7 @@ button:focus-visible {
   color: var(--dim);
   background: #ffffff03;
   border-radius: 5px;
-  font-size: 9px;
+  font-size: var(--font-small);
   font-weight: 600;
   letter-spacing: 0.03em;
 }
@@ -1184,15 +1202,15 @@ button:focus-visible {
   align-items: center;
   gap: 7px;
   color: #bfcce1;
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 550;
 }
 .relay-select small {
   color: var(--dim);
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .selected .relay-select small {
-  color: #8ba3c8;
+  color: #b9cbea;
 }
 .selected .country-code {
   color: #b5c8e8;
@@ -1204,7 +1222,7 @@ button:focus-visible {
 }
 .unit {
   color: var(--dim);
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .relay-list-footer {
   display: flex;
@@ -1216,7 +1234,7 @@ button:focus-visible {
   padding: 10px 22px;
   color: var(--dim);
   border-top: 1px solid #ffffff08;
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .relay-list-footer > span:first-child {
   display: flex;
@@ -1234,7 +1252,7 @@ button:focus-visible {
   align-items: center;
   gap: 5px;
   color: #86b49f;
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .connected-note i {
   width: 4px;
@@ -1257,7 +1275,7 @@ button:focus-visible {
 .relay-host {
   margin: -3px 0 0;
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--font-caption);
   overflow-wrap: anywhere;
 }
 .relay-measures {
@@ -1276,21 +1294,21 @@ button:focus-visible {
   font-size: 24px;
   font-weight: 450;
   line-height: 1.1;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 .relay-measures strong small {
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   letter-spacing: 0;
 }
 .relay-measures div > span {
   color: var(--dim);
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .inspector-description {
   color: #8da3c4;
-  font-size: 11px;
+  font-size: var(--font-label);
   line-height: 1.8;
 }
 
@@ -1315,14 +1333,14 @@ button:focus-visible {
 .activity-heading h2 {
   margin: 0;
   color: #b6c7e2;
-  font-size: 14px;
+  font-size: var(--font-body);
   font-weight: 550;
   letter-spacing: -0.015em;
 }
 .activity-heading p {
   margin: 5px 0 0;
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .event-list {
   border-top: 1px solid #ffffff09;
@@ -1361,19 +1379,20 @@ button:focus-visible {
 }
 .event-level {
   color: var(--dim);
-  font-size: 9px;
+  font-size: var(--font-small);
   text-transform: capitalize;
 }
 .event-row p {
   color: #b4c4df;
-  font-size: 12px;
+  font-size: var(--font-body);
+  max-width: 75ch;
   line-height: 1.7;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
 .event-row time {
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
   padding-top: 4px;
   white-space: nowrap;
@@ -1389,7 +1408,7 @@ button:focus-visible {
   border-top: 1px solid #ffffff09;
   color: var(--dim);
   background: #1a1e26;
-  font-size: 9px;
+  font-size: var(--font-small);
 }
 .statusbar > span {
   display: inline-flex;
@@ -1412,7 +1431,7 @@ button:focus-visible {
 }
 
 .prompt-dialog {
-  width: min(490px, calc(100vw - 36px));
+  width: min(540px, calc(100vw - 36px));
   max-height: calc(100dvh - 40px);
   overflow: auto;
   padding: 25px;
@@ -1456,24 +1475,24 @@ button:focus-visible {
 .prompt-dialog form > p {
   margin: 0 0 23px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--font-label);
   line-height: 1.7;
 }
 .prompt-dialog label {
   display: block;
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--font-caption);
   margin: 0 0 9px;
 }
 .prompt-dialog textarea {
   width: 100%;
   min-height: 150px;
   padding: 12px;
-  color: #c0d0eb;
+  color: #d8e4f7;
   background: #1b222e;
   border: 1px solid #47597680;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--font-body);
   line-height: 1.8;
   resize: vertical;
 }
@@ -1483,12 +1502,12 @@ button:focus-visible {
 .prompt-dialog small {
   display: block;
   color: var(--dim);
-  font-size: 10px;
+  font-size: var(--font-caption);
   margin-top: 8px;
 }
 .prompt-dialog .dialog-error {
   color: #e4b48c;
-  font-size: 11px;
+  font-size: var(--font-caption);
   margin: 12px 0 0;
 }
 .dialog-actions {
@@ -1521,10 +1540,10 @@ button:focus-visible {
     background: #91b8f60c;
   }
   .session-item:not(.selected):hover {
-    background: #ffffff04;
+    background: #ffffff08;
   }
   .relay-table tbody tr:not(.selected):hover td {
-    background: #ffffff03;
+    background: #ffffff08;
   }
   .quiet-button:not(:disabled):hover {
     color: #c8d8f2;
@@ -1548,6 +1567,10 @@ button:focus-visible {
 }
 
 @media (max-width: 1150px) {
+  :root {
+    --session-status-width: 124px;
+    --session-time-width: 60px;
+  }
   .sidebar {
     width: 194px;
     flex-basis: 194px;
@@ -1556,8 +1579,8 @@ button:focus-visible {
     padding-left: 18px;
   }
   .inspector {
-    width: 264px;
-    flex-basis: 264px;
+    width: 288px;
+    flex-basis: 288px;
   }
   .toolbar,
   .route-bar {
@@ -1577,21 +1600,16 @@ button:focus-visible {
     gap: 9px;
   }
   .session-item .session-state {
-    width: 102px;
-    flex-basis: 102px;
-    font-size: 10px;
+    font-size: var(--font-caption);
   }
   .session-item time {
-    width: 46px;
-    flex-basis: 46px;
-    font-size: 10px;
+    font-size: var(--font-caption);
   }
   .list-column-labels {
-    grid-template-columns: minmax(0, 1fr) 102px 46px;
     padding-right: 43px;
   }
   .session-item-copy strong {
-    font-size: 12px;
+    font-size: var(--font-body);
   }
 }
 @media (max-width: 950px) {
@@ -1604,7 +1622,7 @@ button:focus-visible {
     gap: 9px;
   }
   .app-identity strong {
-    font-size: 13px;
+    font-size: var(--font-body);
   }
   .app-mark {
     width: 31px;
@@ -1648,7 +1666,7 @@ button:focus-visible {
     display: none;
   }
   .list-column-labels {
-    grid-template-columns: minmax(0, 1fr) 102px;
+    grid-template-columns: minmax(0, 1fr) var(--session-status-width);
   }
   .relay-table td,
   .relay-table th {
@@ -1741,13 +1759,13 @@ button:focus-visible {
     display: none;
   }
   .route-copy > span {
-    font-size: 9px;
+    font-size: var(--font-caption);
   }
   .route-address {
     display: none;
   }
   .route-link {
-    font-size: 9px;
+    font-size: var(--font-caption);
   }
   .disconnect-button {
     display: none;
@@ -1762,8 +1780,8 @@ button:focus-visible {
     gap: 0;
   }
   .segmented-control button {
-    padding: 4px 8px;
-    font-size: 9px;
+    padding: 5px 6px;
+    font-size: var(--font-caption);
   }
   .view-count {
     display: none;
@@ -1791,16 +1809,17 @@ button:focus-visible {
   .session-item .session-state {
     width: auto;
     flex: 0 0 auto;
-    font-size: 8px;
+    font-size: var(--font-caption);
   }
   .session-symbol {
     display: none;
   }
   .session-item-copy strong {
-    font-size: 11px;
+    font-size: var(--font-body);
   }
   .session-item-copy small {
-    font-size: 8px;
+    font-size: var(--font-caption);
+    flex-wrap: wrap;
   }
   .row-chevron {
     display: none;
@@ -1842,18 +1861,18 @@ button:focus-visible {
     padding-left: 16px;
   }
   .relay-table td {
-    font-size: 10px;
+    font-size: var(--font-caption);
   }
   .relay-select strong {
-    font-size: 10px;
+    font-size: var(--font-caption);
   }
   .relay-select small {
     max-width: 105px;
-    font-size: 8px;
+    font-size: var(--font-caption);
   }
   .relay-list-footer {
     padding: 10px 16px;
-    font-size: 8px;
+    font-size: var(--font-small);
   }
   .relay-list-footer > span:last-child {
     display: none;
@@ -1862,20 +1881,20 @@ button:focus-visible {
     padding: 22px 18px;
   }
   .activity-heading p {
-    font-size: 10px;
+    font-size: var(--font-caption);
   }
   .event-row {
     gap: 9px;
   }
   .event-row time {
-    font-size: 8px;
+    font-size: var(--font-small);
   }
   .event-row p {
-    font-size: 11px;
+    font-size: var(--font-caption);
   }
   .statusbar {
     padding: 7px 13px;
-    font-size: 8px;
+    font-size: var(--font-small);
   }
   .statusbar > span:last-child {
     display: none;

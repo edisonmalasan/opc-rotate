@@ -165,7 +165,9 @@ function SessionItem({
         <Terminal size={18} strokeWidth={1.6} />
       </span>
       <span className="session-item-copy">
-        <strong>{sessionTitle(target.title)}</strong>
+        <strong title={sessionTitle(target.title)}>
+          {sessionTitle(target.title)}
+        </strong>
         <small>
           {target.source === "orca" ? "Orca terminal" : "OpenCode session"}
           {target.promptOverride && (
