@@ -704,20 +704,17 @@ function App() {
     snapshot.phase.startsWith("connecting") ||
     snapshot.phase.startsWith("waiting") ||
     snapshot.phase === "resuming sessions";
-  const scopedSessions =
-    scope === "other"
-      ? snapshot.otherSessions
-      : scope.startsWith("other-project:")
-        ? snapshot.otherSessions.filter(
-            (session) =>
-              projectKey(session.project) === projectKey(scope.slice(14)),
-          )
-        : scope.startsWith("project:")
-          ? snapshot.orcaSessions.filter(
-              (session) =>
-                projectKey(session.project) === projectKey(scope.slice(8)),
-            )
-          : sessions;
+  const scopedSessions = scope.startsWith("other-project:")
+    ? snapshot.otherSessions.filter(
+        (session) =>
+          projectKey(session.project) === projectKey(scope.slice(14)),
+      )
+    : scope.startsWith("project:")
+      ? snapshot.orcaSessions.filter(
+          (session) =>
+            projectKey(session.project) === projectKey(scope.slice(8)),
+        )
+      : sessions;
   const limited = scopedSessions.filter(
     (session) => session.state === "rate-limited",
   ).length;
@@ -900,13 +897,11 @@ function App() {
       ? "VPN relays"
       : view === "activity"
         ? "Activity"
-        : scope === "other"
-          ? "Other OpenCode sessions"
-          : scope.startsWith("other-project:")
-            ? projectName(scope.slice(14))
-            : scope.startsWith("project:")
-              ? projectName(scope.slice(8))
-              : "Sessions";
+        : scope.startsWith("other-project:")
+          ? projectName(scope.slice(14))
+          : scope.startsWith("project:")
+            ? projectName(scope.slice(8))
+            : "Sessions";
 
   return (
     <div className="app-shell">
@@ -958,7 +953,7 @@ function App() {
         </nav>
         <div className="project-nav-scroll">
           <div className="nav-section-label">
-            <span>Orca projects</span>
+            <span>Orca sessions</span>
             <Command size={12} />
           </div>
           <nav className="project-nav">
@@ -993,24 +988,10 @@ function App() {
             )}
           </nav>
           <div className="nav-section-label second">
-            <span>Other projects</span>
+            <span>Other sessions</span>
             <Terminal size={12} />
           </div>
           <nav className="project-nav">
-            <button
-              title="Other OpenCode sessions"
-              className={
-                view === "sessions" && scope === "other" ? "active" : ""
-              }
-              aria-current={
-                view === "sessions" && scope === "other" ? "page" : undefined
-              }
-              onClick={() => navigate("sessions", "other")}
-            >
-              <Terminal size={15} />
-              <span>Other sessions</span>
-              <small>{snapshot.otherSessions.length}</small>
-            </button>
             {otherProjects.map(({ project, targets }) => (
               <button
                 key={project}
@@ -1223,17 +1204,14 @@ function App() {
                     >
                       {search || filter !== "all"
                         ? "Try another search or session filter."
-                        : scope === "other" ||
-                            scope.startsWith("other-project:")
+                        : scope.startsWith("other-project:")
                           ? "Open a session with opencode or opencode --auto. Live shared-service sessions appear under their project."
                           : "Existing OpenCode work in Orca and the shared service will appear here."}
                     </EmptyState>
                   )}
                 </div>
                 {snapshot.otherSessionsNotice &&
-                  (scope === "all" ||
-                    scope === "other" ||
-                    scope.startsWith("other-project:")) && (
+                  (scope === "all" || scope.startsWith("other-project:")) && (
                     <div className="session-discovery-notice" role="status">
                       <CircleAlert size={14} />
                       <span>{snapshot.otherSessionsNotice}</span>
