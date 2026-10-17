@@ -1,0 +1,55 @@
+# OpenCode Recovery: agent guide
+
+## Project
+
+OpenCode Recovery is a Windows desktop dashboard for recovering live OpenCode work from IP-sensitive rate limits. It uses VPN Gate relay data, the installed SoftEther VPN Client, Orca terminal controls, and OpenCode's shared local service. See [README.md](README.md) for use and [docs/CONTEXT.md](docs/CONTEXT.md) for a source map.
+
+The initial Tauri application, Rust controller, tests, and Windows installer build exist. Active-session filtering and per-project Orca layout are in progress. [docs/ROADMAP.md](docs/ROADMAP.md) records verified progress; inspect source and tests before changing its status.
+
+## Source map
+
+| Concern | Source |
+| --- | --- |
+| Dashboard and styles | `src/main.tsx`, `src/styles.css` |
+| State, polling, incident queue, recovery | `src-tauri/src/lib.rs` |
+| OpenCode shared service | `src-tauri/src/opencode.rs` |
+| Orca terminals | `src-tauri/src/orca.rs` |
+| VPN Gate CSV and ranking | `src-tauri/src/vpngate.rs` |
+| SoftEther profile lifecycle | `src-tauri/src/softether.rs` |
+| UI data contracts | `src-tauri/src/models.rs` |
+| Product intent | `PRODUCT.md`, `docs/ROADMAP.md` |
+
+## Stack and commands
+
+React 19, TypeScript, and Vite 6 provide the UI (`package.json`). Tauri 2 and Rust 2021 provide the desktop controller (`src-tauri/Cargo.toml`). Settings and history are JSON in the user's config directory (`src-tauri/src/lib.rs`). Rust unit and mock HTTP tests live alongside the source.
+
+Run from the repository root:
+
+```powershell
+npm install
+npm run tauri -- dev
+npm run build
+npm test
+npm run tauri -- build
+```
+
+`npm run build` includes TypeScript checking. `npm test` runs Rust tests. The Tauri build creates an NSIS installer under `src-tauri/target/release/bundle/nsis/`.
+
+## Boundaries
+
+- Preserve existing Orca/OpenCode sessions; the app connects to them but does not launch or own them.
+- Touch only SoftEther profiles with the app's `OPCRotate_` prefix. VPN routing affects the machine; wait for other active work to become idle.
+- Require a connected SoftEther account and a changed public IPv4 address before continuing. Bound relay attempts and avoid duplicate prompt submissions after uncertain receipts.
+- The first version uses OpenCode's shared loopback service. Private `--standalone` services require explicit support.
+- UI session lists represent live work, not historical shared-service records. Preserve an already detected rate-limit incident long enough to recover it.
+- User requests take precedence over this guide. The current user explicitly requested separate commits pushed to `main`.
+
+## Working method
+
+1. Read `docs/CONTEXT.md`, the relevant roadmap section, and directly affected source.
+2. Make a small, reviewable change. Apply the repository's Apple Design and Emil Design Engineering skills for the requested frontend pass.
+3. Run relevant builds and tests. Live VPN tests can interrupt the user's connection; run those only when necessary.
+4. Update the roadmap only for verified outcomes; label remaining gaps accurately.
+5. Stage logical groups, use conventional commits, and push each requested commit separately. Do not commit secrets, local settings, `node_modules`, `dist`, or `src-tauri/target`.
+
+If documentation disagrees with code, report the discrepancy and resolve it against the approved behavior. Template text and generated knowledge are not implementation evidence.
