@@ -45,4 +45,4 @@ The user supplied screenshots of an OpenCode rate-limit error, the VPN Gate rela
 
 ## Visual Direction
 
-Use the existing lime-green recovery icon with dark forest surfaces, green selection states, and lime action/focus accents. Keep amber for errors and rate limits. Preserve the compact desktop layout, readable type, project folder headings, and restrained motion.
+Use neutral charcoal surfaces, neutral white/gray text, and gray row selections. Keep the existing green icon; reserve restrained lime accents for checked controls, focus rings, and enabled primary actions. Disabled buttons stay neutral. Keep amber for errors and rate limits. Preserve the compact desktop layout, readable type, project folder headings, and restrained motion.
