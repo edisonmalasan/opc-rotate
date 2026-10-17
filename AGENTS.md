@@ -15,7 +15,7 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 | Dev server port selection | `scripts/tauri.mjs`, `vite.config.ts` |
 | State, polling, incident queue, recovery | `src-tauri/src/lib.rs` |
 | OpenCode shared service | `src-tauri/src/opencode.rs` |
-| Live OpenCode terminal presence | `src-tauri/src/presence.rs`, `integrations/opencode/tui.js` |
+| Live tab presence, exact-session requests and receipts | `src-tauri/src/presence.rs`, `integrations/opencode/tui.js` |
 | Orca terminals | `src-tauri/src/orca.rs` |
 | VPN Gate CSV and ranking | `src-tauri/src/vpngate.rs` |
 | SoftEther profile lifecycle | `src-tauri/src/softether.rs` |
@@ -45,9 +45,10 @@ For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty
 - Preserve existing Orca/OpenCode sessions; the app connects to them but does not launch or own them.
 - Touch only SoftEther profiles with the app's `OPCRotate_` prefix. VPN routing affects the machine; wait for other active work to become idle.
 - Require a connected SoftEther account and a changed public IPv4 address before continuing. Bound relay attempts and avoid duplicate prompt submissions after uncertain receipts.
-- The first version uses OpenCode's shared loopback service. Private `--standalone` services require explicit support.
+- Use the shared service for API fallback. A live CLI plugin can report and control its own connected private service through the SDK; do not discover arbitrary private endpoints or copy their credentials.
 - UI session lists represent live work, not historical shared-service records. Preserve an already detected rate-limit incident long enough to recover it.
-- An idle terminal is live when its presence lease identifies the current shared-service PID. Saved TUI tabs and session timestamps are not proof of a live client. Deduplicate Orca ownership by session ID, never by the whole project directory. Keep both sources grouped by project.
+- Live client leases report their tab strip and connected service PID. Saved global TUI tabs and session timestamps are not proof of a live client. Deduplicate ownership by session ID, never by the whole project directory. Group both sources by project, terminal, and session; selection is independent of Idle/Working status. Closed incidents stay visible without a delivery route until reopened.
+- Address continuation by exact session ID through the live plugin request/receipt channel. Do not type a recovery prompt into an Orca terminal, since its selected tab can change. Persist the incident guard before delivery, claim each request once, and never retry ambiguous receipts automatically. Unknown execution status blocks VPN changes.
 - The app installs only its own `opc-rotate-presence/tui.js` under OpenCode's global plugin directory; it does not rewrite OpenCode configuration or other plugins. Keep presence records free of credentials and prompt text.
 - User requests take precedence over this guide. The current user explicitly requested separate commits pushed to `main`.
 
