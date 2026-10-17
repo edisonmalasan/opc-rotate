@@ -24,7 +24,7 @@ The app runs beside existing Orca and OpenCode sessions. SoftEther VPN Client an
 
 ## Capabilities and Constraints
 
-- Separate Orca and outside OpenCode session lists, both grouped by project, terminal, and open session tab. Use live client presence rather than saved history. Show Idle, Working, Needs recovery, or unavailable status independently of which tab is selected.
+- Separate Orca and outside OpenCode session lists, with open session tabs directly beneath folder-marked project headings. Omit redundant terminal headings and counts. Use live client presence rather than saved history. Show Idle, Working, Needs recovery, or unavailable status independently of which tab is selected.
 - Show VPN connection state, ranked public relays, manual list refresh, monitoring switch, recovery history, and editable continuation prompts.
 - Use only app-created SoftEther connection profiles; do not alter unrelated profiles.
 - Recover exact OpenCode sessions through their live CLI plugin's connected SDK, including connected private services. Keep the shared local service as a fallback for responding sessions. Arbitrary private-server connection setup remains outside this release.
