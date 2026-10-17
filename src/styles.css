@@ -7,15 +7,15 @@
     system-ui,
     sans-serif;
   font-optical-sizing: auto;
-  color: #f0f7ed;
-  background: #1d241f;
+  color: #f2f2f2;
+  background: #202021;
   color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --text: #f0f7ed;
-  --muted: #bccab5;
-  --dim: #a9bba0;
+  --text: #ececed;
+  --muted: #b5b6ba;
+  --dim: #a4a6ac;
   --line: #ffffff12;
   --font-small: 0.6875rem;
   --font-caption: 0.75rem;
@@ -24,8 +24,8 @@
   --font-heading: 1.25rem;
   --session-status-width: 128px;
   --session-time-width: 72px;
-  --accent: #b4e98e;
-  --green: #88c8a5;
+  --accent: #b4dd97;
+  --green: #91ba9c;
   --amber: #e5b885;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -80,7 +80,7 @@ button:focus-visible {
 }
 ::selection {
   color: #fff;
-  background: #66a646;
+  background: #737579;
 }
 ::-webkit-scrollbar {
   width: 7px;
@@ -112,8 +112,8 @@ button:focus-visible {
   flex: 0 0 224px;
   display: flex;
   flex-direction: column;
-  background: #171d19e8;
-  border-right: 1px solid #080c0980;
+  background: #191a1be8;
+  border-right: 1px solid #0a0a0a80;
   backdrop-filter: blur(24px) saturate(120%);
   user-select: none;
 }
@@ -176,7 +176,7 @@ button:focus-visible {
   font-size: var(--font-label);
 }
 .main-nav button > svg {
-  color: #99a692;
+  color: #9a9b9e;
   stroke-width: 1.7;
 }
 .main-nav button span,
@@ -195,7 +195,7 @@ button:focus-visible {
 }
 .main-nav button.active,
 .project-nav button.active {
-  color: #f6f9f4;
+  color: #f6f6f7;
   border-color: #ffffff05;
   background: #ffffff0d;
   box-shadow: 0 1px 2px #00000010;
@@ -206,7 +206,7 @@ button:focus-visible {
 }
 .main-nav button.active small,
 .project-nav button.active small {
-  color: #bdccb6;
+  color: #bfc0c3;
 }
 .nav-indicator {
   width: 5px;
@@ -234,7 +234,7 @@ button:focus-visible {
   text-transform: uppercase;
 }
 .nav-section-label svg {
-  color: #64735d;
+  color: #65676b;
 }
 .nav-section-label.second {
   margin-top: 27px;
@@ -245,7 +245,7 @@ button:focus-visible {
 }
 .project-nav button > svg {
   flex: 0 0 auto;
-  color: #7a8d70;
+  color: #7b7d82;
   stroke-width: 1.5;
 }
 .attention-dot {
@@ -274,13 +274,13 @@ button:focus-visible {
   padding: 9px 10px;
   border: 0;
   border-radius: 6px;
-  color: #a8b5a1;
+  color: #a9aaad;
   background: transparent;
   font-size: var(--font-caption);
   text-align: left;
 }
 .prompt-settings svg {
-  color: #86977e;
+  color: #888a8d;
   stroke-width: 1.6;
 }
 .sidebar-caption {
@@ -298,7 +298,7 @@ button:focus-visible {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #1d241f;
+  background: #202021;
 }
 .toolbar {
   display: flex;
@@ -308,8 +308,8 @@ button:focus-visible {
   height: 73px;
   flex: 0 0 auto;
   padding: 0 24px;
-  background: #222a25;
-  border-bottom: 1px solid #0c120e50;
+  background: #252627;
+  border-bottom: 1px solid #0f0f0f50;
 }
 .toolbar-title {
   display: flex;
@@ -329,9 +329,9 @@ button:focus-visible {
 }
 .preview-label {
   padding: 2px 6px;
-  color: #b3cba7;
-  background: #b8e5a20c;
-  border: 1px solid #b8e5a22b;
+  color: #b7b8bb;
+  background: #c2c3c50c;
+  border: 1px solid #c2c3c52b;
   border-radius: 4px;
   white-space: nowrap;
   font-size: var(--font-small);
@@ -349,16 +349,16 @@ button:focus-visible {
   min-height: 36px;
   padding: 0 11px;
   color: var(--dim);
-  border: 1px solid #0c130e80;
-  border-top-color: #111a14;
+  border: 1px solid #0f0f1080;
+  border-top-color: #151516;
   border-bottom-color: #ffffff0c;
   border-radius: 6px;
-  background: #19201b;
+  background: #1c1c1d;
   box-shadow: inset 0 1px 2px #00000014;
 }
 .search-field:focus-within {
-  border-color: #91d27180;
-  box-shadow: 0 0 0 2px #95d6741a;
+  border-color: #9fa1a480;
+  box-shadow: 0 0 0 2px #a3a4a71a;
 }
 .search-field input {
   min-width: 0;
@@ -383,7 +383,7 @@ button:focus-visible {
   height: 28px;
   width: 28px;
   padding: 0;
-  color: #90a187;
+  color: #919397;
   background: none;
   border: 0;
 }
@@ -405,7 +405,7 @@ button:focus-visible {
   width: 36px;
   height: 22px;
   padding: 3px;
-  background: #425047;
+  background: #47484b;
   border: 1px solid #ffffff08;
   border-radius: 20px;
   transition: background-color 140ms ease;
@@ -414,16 +414,16 @@ button:focus-visible {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #dce4d8;
+  background: #dddedf;
   box-shadow: 0 1px 2px #0004;
   transition: transform 180ms var(--ease-out);
 }
 .enabled .switch-track {
-  background: #a0dc82;
+  background: var(--accent);
 }
 .enabled .switch-track span {
   transform: translateX(14px);
-  background: #fff;
+  background: #232622;
 }
 .monitor-control:focus-visible .switch-track span {
   transition: none;
@@ -437,7 +437,7 @@ button:focus-visible {
   flex: 0 0 auto;
   padding: 13px 25px;
   border-bottom: 1px solid var(--line);
-  background: #202823;
+  background: #232425;
 }
 .route-symbol {
   display: grid;
@@ -445,13 +445,13 @@ button:focus-visible {
   width: 36px;
   height: 36px;
   flex: 0 0 auto;
-  color: #97a88e;
+  color: #999a9e;
   border: 1px solid #ffffff0c;
   border-radius: 9px;
   background: #ffffff03;
 }
 .route-symbol.connected {
-  color: #a0bfae;
+  color: #aeafb1;
 }
 .route-copy {
   display: flex;
@@ -481,7 +481,7 @@ button:focus-visible {
   height: 5px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #83927b;
+  background: #83858a;
 }
 .route-dot.connected {
   background: var(--green);
@@ -508,7 +508,7 @@ button:focus-visible {
   gap: 5px;
   min-height: 34px;
   padding: 7px 0 7px 16px;
-  color: #c7e6b7;
+  color: #cdced0;
   background: none;
   border: 0;
   border-left: 1px solid #ffffff0c;
@@ -531,9 +531,9 @@ button:focus-visible {
   gap: 9px;
   padding: 10px 25px;
   flex: 0 0 auto;
-  color: #aabda1;
-  background: #2b4433;
-  border-bottom: 1px solid #35543f;
+  color: #adaeb1;
+  background: #363739;
+  border-bottom: 1px solid #434446;
   font-size: var(--font-caption);
 }
 .error-banner {
@@ -564,7 +564,7 @@ button:focus-visible {
   align-items: center;
   padding: 3px;
   gap: 2px;
-  background: #141b167d;
+  background: #1717187d;
   border: 1px solid #ffffff04;
   border-radius: 7px;
   min-width: 0;
@@ -588,8 +588,8 @@ button:focus-visible {
   flex: 0 0 auto;
 }
 .segmented-control button.active {
-  color: #e9f1e5;
-  background: #38453c;
+  color: #ebebec;
+  background: #3d3e40;
   border-top-color: #ffffff14;
   box-shadow: 0 1px 3px #0004;
 }
@@ -650,12 +650,12 @@ button:focus-visible {
   min-width: 0;
 }
 .group-title svg {
-  color: #8ba27f;
+  color: #8e9093;
   stroke-width: 1.5;
   flex: 0 0 auto;
 }
 .group-title strong {
-  color: #d8e4d2;
+  color: #dadbdc;
   font-size: var(--font-label);
   font-weight: 600;
   overflow: hidden;
@@ -760,8 +760,8 @@ button:focus-visible {
   gap: 5px;
 }
 .session-item.selected {
-  background: #2f4938;
-  border-color: #ade0934d;
+  background: #303234;
+  border-color: #ffffff24;
 }
 .session-symbol {
   display: grid;
@@ -780,11 +780,11 @@ button:focus-visible {
   border-color: #d9ad801c;
 }
 .session-symbol.busy {
-  color: #aadb91;
+  color: #b4b5b8;
 }
 .selected .session-symbol {
-  background: #395944;
-  border-color: #afe0961a;
+  background: #47484b;
+  border-color: #b9babd1a;
 }
 .session-item-copy {
   display: flex;
@@ -798,7 +798,7 @@ button:focus-visible {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  color: #e5efe0;
+  color: #e7e7e8;
   font-size: var(--font-body);
   font-weight: 550;
   letter-spacing: -0.012em;
@@ -807,7 +807,7 @@ button:focus-visible {
   line-height: 1.45;
 }
 .selected .session-item-copy > strong {
-  color: #f4fbf1;
+  color: #f6f6f6;
 }
 .session-item-copy small {
   display: flex;
@@ -817,7 +817,7 @@ button:focus-visible {
   font-size: var(--font-caption);
 }
 .selected .session-item-copy small {
-  color: #c9eab9;
+  color: #d0d1d3;
 }
 .session-state {
   display: inline-flex;
@@ -832,7 +832,7 @@ button:focus-visible {
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #728174;
+  background: #76787d;
 }
 .session-state.rate-limited {
   color: #d8b28a;
@@ -841,10 +841,10 @@ button:focus-visible {
   background: #d9ae7f;
 }
 .session-state.busy {
-  color: #b2e19a;
+  color: #bcbdbf;
 }
 .session-state.busy i {
-  background: #aadf8f;
+  background: #b5b6b9;
 }
 .session-state.unknown i {
   background: var(--dim);
@@ -862,7 +862,7 @@ button:focus-visible {
   white-space: nowrap;
 }
 .selected time {
-  color: #c9eab9;
+  color: #d0d1d3;
 }
 .row-chevron {
   color: var(--dim);
@@ -870,7 +870,7 @@ button:focus-visible {
   width: 10px;
 }
 .selected .row-chevron {
-  color: #b4d6a3;
+  color: #bbbcbe;
 }
 .list-footnote {
   display: flex;
@@ -905,7 +905,7 @@ button:focus-visible {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #222c25;
+  background: #262728;
   border-left: 1px solid #ffffff08;
 }
 .inspector-toolbar {
@@ -924,7 +924,7 @@ button:focus-visible {
   height: 30px;
   width: 30px;
   padding: 0;
-  color: #8ba081;
+  color: #8e9093;
   background: transparent;
   border: 0;
   border-radius: 5px;
@@ -940,7 +940,7 @@ button:focus-visible {
 }
 .inspector-title {
   margin: 0 0 12px;
-  color: #e9f2e5;
+  color: #ebebec;
   font-size: var(--font-heading);
   line-height: 1.3;
   letter-spacing: -0.025em;
@@ -982,7 +982,7 @@ button:focus-visible {
   color: var(--dim);
 }
 .detail-list dd {
-  color: #b8c7b1;
+  color: #babbbe;
   margin: 0;
   text-align: right;
 }
@@ -999,14 +999,14 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #b6ceaa;
+  color: #babbbe;
 }
 .project-location strong {
   font-size: var(--font-label);
   font-weight: 500;
 }
 .project-location svg {
-  color: #93aa87;
+  color: #96989b;
   stroke-width: 1.5;
 }
 .path-text {
@@ -1042,7 +1042,7 @@ button:focus-visible {
   gap: 10px;
 }
 .text-button {
-  color: #b7e4a0;
+  color: #c0c1c4;
   border: 0;
   min-height: 28px;
   padding: 3px 4px;
@@ -1051,7 +1051,7 @@ button:focus-visible {
 }
 .prompt-preview {
   margin: 0;
-  color: #d8e4d2;
+  color: #dadbdc;
   font-size: var(--font-body);
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -1066,7 +1066,7 @@ button:focus-visible {
   flex: 0 0 auto;
   padding: 18px 24px;
   border-top: 1px solid #ffffff08;
-  background: #222c25;
+  background: #262728;
 }
 .inspector-bottom > p {
   margin: 10px 0 0;
@@ -1085,8 +1085,8 @@ button:focus-visible {
   padding: 8px 14px;
   border: 1px solid #ffffff10;
   border-radius: 6px;
-  color: #d7e5d0;
-  background: #34463a;
+  color: #dadadb;
+  background: #3b3c3f;
   font-size: var(--font-label);
   font-weight: 550;
   box-shadow:
@@ -1098,12 +1098,19 @@ button:focus-visible {
   white-space: nowrap;
 }
 .primary-button {
-  color: #19251c;
+  color: #1e1f20;
   background: var(--accent);
-  border-color: #d0eec1;
+  border-color: #c3e5ac;
   box-shadow:
     0 1px 3px #0003,
     inset 0 1px #ffffff30;
+}
+.primary-button:disabled {
+  color: #a1a3a8;
+  background: #34363a;
+  border-color: #ffffff12;
+  box-shadow: none;
+  opacity: 1;
 }
 .full-width {
   width: 100%;
@@ -1124,7 +1131,7 @@ button:focus-visible {
   text-align: center;
 }
 .empty-symbol {
-  color: #566a4c;
+  color: #595a5d;
   margin-bottom: 12px;
 }
 .empty-state h2 {
@@ -1145,7 +1152,7 @@ button:focus-visible {
   min-height: 0;
 }
 .empty-inspector .empty-symbol {
-  color: #5e7553;
+  color: #626366;
 }
 .empty-inspector .empty-state p {
   max-width: 210px;
@@ -1161,8 +1168,8 @@ button:focus-visible {
   font-size: var(--font-caption);
 }
 .relay-sort select {
-  color: #c3dcb7;
-  background: #2b3b30;
+  color: #c8c9cb;
+  background: #323334;
   border: 1px solid #ffffff0c;
   border-radius: 5px;
   padding: 5px 8px;
@@ -1192,7 +1199,7 @@ button:focus-visible {
   padding: 12px 18px;
   border-bottom: 1px solid #ffffff09;
   color: var(--dim);
-  background: #1d241f;
+  background: #202021;
   text-align: right;
   font-size: var(--font-small);
   font-weight: 500;
@@ -1213,7 +1220,7 @@ button:focus-visible {
   padding: 0 18px;
   height: 65px;
   border-bottom: 1px solid #ffffff05;
-  color: #abc99c;
+  color: #b1b2b4;
   font-size: var(--font-caption);
   text-align: right;
   white-space: nowrap;
@@ -1228,11 +1235,11 @@ button:focus-visible {
   text-align: left;
 }
 .relay-table tr.selected td {
-  background: #2f4938;
-  color: #d0edc2;
+  background: #303234;
+  color: #d7d7d8;
 }
 .relay-table tr.selected td:first-child {
-  box-shadow: inset 1px 0 #ade193;
+  box-shadow: inset 1px 0 #b8b9bc;
 }
 .relay-select {
   display: flex;
@@ -1268,7 +1275,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #cae1bf;
+  color: #cfd0d1;
   font-size: var(--font-caption);
   font-weight: 550;
 }
@@ -1277,15 +1284,15 @@ button:focus-visible {
   font-size: var(--font-small);
 }
 .selected .relay-select small {
-  color: #c9eab9;
+  color: #d0d1d3;
 }
 .selected .country-code {
-  color: #c6e8b5;
-  border-color: #b8e5a232;
-  background: #b8e5a208;
+  color: #cdced0;
+  border-color: #c2c3c532;
+  background: #c2c3c508;
 }
 .relay-table td.low-ping {
-  color: #8bbda6;
+  color: #a2a3a6;
 }
 .unit {
   color: var(--dim);
@@ -1312,30 +1319,30 @@ button:focus-visible {
   width: 2px;
   height: 2px;
   border-radius: 50%;
-  background: #637b57;
+  background: #66686c;
 }
 .connected-note {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #86b49f;
+  color: #9b9c9f;
   font-size: var(--font-small);
 }
 .connected-note i {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #88c8a5;
+  background: #a6a7aa;
 }
 .relay-country-large {
   display: grid;
   place-items: center;
   width: 48px;
   height: 38px;
-  border: 1px solid #86b1713b;
-  background: #86b1710b;
+  border: 1px solid #8e90943b;
+  background: #8e90940b;
   border-radius: 7px;
-  color: #badfa8;
+  color: #c2c3c5;
   font-size: 15px;
   letter-spacing: 0.04em;
 }
@@ -1357,7 +1364,7 @@ button:focus-visible {
   gap: 5px;
 }
 .relay-measures strong {
-  color: #c8e7b9;
+  color: #cfd0d1;
   font-size: 24px;
   font-weight: 450;
   line-height: 1.1;
@@ -1374,7 +1381,7 @@ button:focus-visible {
   font-size: var(--font-small);
 }
 .inspector-description {
-  color: #9fc48d;
+  color: #a6a8ab;
   font-size: var(--font-label);
   line-height: 1.8;
 }
@@ -1391,7 +1398,7 @@ button:focus-visible {
   align-items: start;
   gap: 11px;
   margin: 0 0 24px;
-  color: #8ab774;
+  color: #939598;
 }
 .activity-heading > svg {
   margin-top: 3px;
@@ -1399,7 +1406,7 @@ button:focus-visible {
 }
 .activity-heading h2 {
   margin: 0;
-  color: #c5e2b6;
+  color: #cbcccd;
   font-size: var(--font-body);
   font-weight: 550;
   letter-spacing: -0.015em;
@@ -1427,13 +1434,13 @@ button:focus-visible {
   width: 25px;
   flex: 0 0 auto;
   margin-top: 1px;
-  color: #86b171;
-  border: 1px solid #86b1711a;
+  color: #8e9094;
+  border: 1px solid #8e90941a;
   border-radius: 6px;
 }
 .event-row.success .event-icon {
-  color: #81b39d;
-  border-color: #81b39d26;
+  color: #97999d;
+  border-color: #97999d26;
 }
 .event-row.warning .event-icon,
 .event-row.error .event-icon {
@@ -1450,7 +1457,7 @@ button:focus-visible {
   text-transform: capitalize;
 }
 .event-row p {
-  color: #c2dfb4;
+  color: #c8c9cb;
   font-size: var(--font-body);
   max-width: 75ch;
   line-height: 1.7;
@@ -1474,7 +1481,7 @@ button:focus-visible {
   padding: 6px 20px;
   border-top: 1px solid #ffffff09;
   color: var(--dim);
-  background: #1a261e;
+  background: #1f2021;
   font-size: var(--font-small);
 }
 .statusbar > span {
@@ -1488,10 +1495,10 @@ button:focus-visible {
   height: 4px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #6b855e;
+  background: #6f7174;
 }
 .statusbar i.online {
-  background: #7ea18e;
+  background: #8d8f92;
 }
 .statusbar .recovery-status {
   color: #d3af86;
@@ -1503,15 +1510,15 @@ button:focus-visible {
   overflow: auto;
   padding: 25px;
   color: var(--text);
-  background: #27352c;
-  border: 1px solid #87a07a4a;
+  background: #2d2e2f;
+  border: 1px solid #8a8c904a;
   border-radius: 14px;
   box-shadow:
     0 26px 85px #0009,
     inset 0 1px #ffffff07;
 }
 .prompt-dialog::backdrop {
-  background: #0c130ea1;
+  background: #0f0f10a1;
   backdrop-filter: blur(4px);
 }
 .prompt-dialog form {
@@ -1527,14 +1534,14 @@ button:focus-visible {
   place-items: center;
   width: 39px;
   height: 39px;
-  color: #b7e1a2;
-  background: #98c28318;
-  border: 1px solid #98c28323;
+  color: #c0c1c3;
+  background: #a0a2a518;
+  border: 1px solid #a0a2a523;
   border-radius: 10px;
 }
 .prompt-dialog h2 {
   margin: 18px 0 8px;
-  color: #e5f6dd;
+  color: #e9e9ea;
   font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.035em;
@@ -1555,9 +1562,9 @@ button:focus-visible {
   width: 100%;
   min-height: 150px;
   padding: 12px;
-  color: #e3f5da;
-  background: #1c2d22;
-  border: 1px solid #596f4e80;
+  color: #e7e7e8;
+  background: #242425;
+  border: 1px solid #5c5e6180;
   border-radius: 7px;
   font-size: var(--font-body);
   line-height: 1.8;
@@ -1600,11 +1607,11 @@ button:focus-visible {
   .project-nav button:not(.active):hover,
   .prompt-settings:hover {
     background: #ffffff06;
-    color: #d2e9c6;
+    color: #d7d7d8;
   }
   .icon-button:hover {
-    color: #cee9c0;
-    background: #b8e5a20c;
+    color: #d3d4d6;
+    background: #c2c3c50c;
   }
   .session-item:not(.selected):hover {
     background: #ffffff08;
@@ -1613,18 +1620,18 @@ button:focus-visible {
     background: #ffffff08;
   }
   .quiet-button:not(:disabled):hover {
-    color: #d7f0ca;
-    border-color: #b8e5a240;
+    color: #dcddde;
+    border-color: #c2c3c540;
   }
   .secondary-button:not(:disabled):hover {
-    background: #415c4a;
+    background: #4d4e50;
   }
   .primary-button:not(:disabled):hover {
-    background: #ccecbc;
+    background: #c3e5ac;
   }
   .text-button:hover,
   .route-link:hover {
-    color: #d7f0ca;
+    color: #dcddde;
   }
   .primary-button:active:not(:disabled):not(:focus-visible),
   .secondary-button:active:not(:disabled):not(:focus-visible),
@@ -1992,18 +1999,18 @@ button:focus-visible {
 }
 @media (prefers-reduced-transparency: reduce) {
   .sidebar {
-    background: #171d19;
+    background: #191a1b;
     backdrop-filter: none;
   }
   .prompt-dialog::backdrop {
-    background: #0c130ee6;
+    background: #0f0f10e6;
     backdrop-filter: none;
   }
 }
 @media (prefers-contrast: more) {
   :root {
-    --muted: #cedfc6;
-    --dim: #b6cfaa;
+    --muted: #d1d2d4;
+    --dim: #bbbcbe;
     --line: #ffffff32;
   }
   .main-nav button,
@@ -2015,11 +2022,11 @@ button:focus-visible {
   .detail-caption,
   .inspector-bottom > p,
   .statusbar {
-    color: #b6d7a6;
+    color: #bdbec0;
   }
   .session-item.selected,
   .relay-table tr.selected td {
-    background: #42674e;
+    background: #525457;
   }
   .inspector {
     border-left-color: #ffffff45;
