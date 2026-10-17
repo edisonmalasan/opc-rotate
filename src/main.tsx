@@ -57,6 +57,32 @@ function projectName(path: string) {
   );
 }
 
+function projectKey(path: string) {
+  return path
+    .replaceAll("\\", "/")
+    .replace(/\/+/g, "/")
+    .replace(/\/$/, "")
+    .toLowerCase();
+}
+
+function groupProjects(targets: SessionTarget[]) {
+  const groups = new Map<
+    string,
+    { project: string; targets: SessionTarget[] }
+  >();
+  for (const target of targets) {
+    const key = projectKey(target.project);
+    const group = groups.get(key) ?? { project: target.project, targets: [] };
+    group.targets.push(target);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort(
+    (a, b) =>
+      projectName(a.project).localeCompare(projectName(b.project)) ||
+      a.project.localeCompare(b.project),
+  );
+}
+
 function sessionTitle(title: string) {
   return title.replace(/^OC\s*\|\s*/i, "");
 }
@@ -650,17 +676,14 @@ function App() {
     () => [...snapshot.orcaSessions, ...snapshot.otherSessions],
     [snapshot.orcaSessions, snapshot.otherSessions],
   );
-  const projects = useMemo(() => {
-    const groups = new Map<string, SessionTarget[]>();
-    for (const session of snapshot.orcaSessions)
-      groups.set(session.project, [
-        ...(groups.get(session.project) ?? []),
-        session,
-      ]);
-    return [...groups.entries()].sort(([a], [b]) =>
-      projectName(a).localeCompare(projectName(b)),
-    );
-  }, [snapshot.orcaSessions]);
+  const projects = useMemo(
+    () => groupProjects(snapshot.orcaSessions),
+    [snapshot.orcaSessions],
+  );
+  const otherProjects = useMemo(
+    () => groupProjects(snapshot.otherSessions),
+    [snapshot.otherSessions],
+  );
   useEffect(() => {
     if (!initialSelection.current && sessions.length) {
       setSelectedId(
@@ -684,11 +707,17 @@ function App() {
   const scopedSessions =
     scope === "other"
       ? snapshot.otherSessions
-      : scope.startsWith("project:")
-        ? snapshot.orcaSessions.filter(
-            (session) => session.project === scope.slice(8),
+      : scope.startsWith("other-project:")
+        ? snapshot.otherSessions.filter(
+            (session) =>
+              projectKey(session.project) === projectKey(scope.slice(14)),
           )
-        : sessions;
+        : scope.startsWith("project:")
+          ? snapshot.orcaSessions.filter(
+              (session) =>
+                projectKey(session.project) === projectKey(scope.slice(8)),
+            )
+          : sessions;
   const limited = scopedSessions.filter(
     (session) => session.state === "rate-limited",
   ).length;
@@ -704,16 +733,11 @@ function App() {
   );
   const selected =
     shownSessions.find((session) => session.id === selectedId) ?? null;
-  const shownGroups = projects
-    .map(([project]) => ({
-      project,
-      targets: shownSessions.filter(
-        (session) => session.source === "orca" && session.project === project,
-      ),
-    }))
-    .filter((group) => group.targets.length);
-  const shownOther = shownSessions.filter(
-    (session) => session.source === "other",
+  const shownGroups = groupProjects(
+    shownSessions.filter((session) => session.source === "orca"),
+  );
+  const shownOtherGroups = groupProjects(
+    shownSessions.filter((session) => session.source === "other"),
   );
   const relays = useMemo(() => {
     const result = snapshot.servers.filter((server) =>
@@ -843,14 +867,21 @@ function App() {
     other = false,
   ) {
     return (
-      <section className="session-group" key={other ? "other" : subtitle}>
+      <section
+        className="session-group"
+        key={`${other ? "other" : "orca"}:${subtitle}`}
+        aria-label={`${title} · ${other ? "Other OpenCode sessions" : "Orca terminals"}`}
+      >
         <div className="group-heading">
           <span className="group-title">
             {other ? <Terminal size={14} /> : <Folder size={14} />}
             <strong>{title}</strong>
+            <em className="group-source">{other ? "OpenCode" : "Orca"}</em>
             <span>{targets.length}</span>
           </span>
-          <small title={subtitle}>{other ? "Shared service" : subtitle}</small>
+          <small title={subtitle}>
+            {subtitle || "Project directory unavailable"}
+          </small>
         </div>
         {targets.map((target) => (
           <SessionItem
@@ -871,9 +902,11 @@ function App() {
         ? "Activity"
         : scope === "other"
           ? "Other OpenCode sessions"
-          : scope.startsWith("project:")
-            ? projectName(scope.slice(8))
-            : "Sessions";
+          : scope.startsWith("other-project:")
+            ? projectName(scope.slice(14))
+            : scope.startsWith("project:")
+              ? projectName(scope.slice(8))
+              : "Sessions";
 
   return (
     <div className="app-shell">
@@ -930,7 +963,7 @@ function App() {
           </div>
           <nav className="project-nav">
             {projects.length ? (
-              projects.map(([project, targets]) => (
+              projects.map(({ project, targets }) => (
                 <button
                   key={project}
                   className={
@@ -960,7 +993,8 @@ function App() {
             )}
           </nav>
           <div className="nav-section-label second">
-            <span>OpenCode</span>
+            <span>Other projects</span>
+            <Terminal size={12} />
           </div>
           <nav className="project-nav">
             <button
@@ -977,6 +1011,31 @@ function App() {
               <span>Other sessions</span>
               <small>{snapshot.otherSessions.length}</small>
             </button>
+            {otherProjects.map(({ project, targets }) => (
+              <button
+                key={project}
+                title={`${project}\nOutside Orca`}
+                className={
+                  view === "sessions" && scope === `other-project:${project}`
+                    ? "active"
+                    : ""
+                }
+                aria-current={
+                  view === "sessions" && scope === `other-project:${project}`
+                    ? "page"
+                    : undefined
+                }
+                onClick={() => navigate("sessions", `other-project:${project}`)}
+              >
+                <Folder size={15} />
+                <span>{projectName(project)}</span>
+                {targets.some((target) => target.state === "rate-limited") ? (
+                  <i className="attention-dot" />
+                ) : (
+                  <small>{targets.length}</small>
+                )}
+              </button>
+            ))}
           </nav>
         </div>
         <div className="sidebar-bottom">
@@ -1144,13 +1203,14 @@ function App() {
                           group.targets,
                         ),
                       )}
-                      {shownOther.length > 0 &&
+                      {shownOtherGroups.map((group) =>
                         renderGroup(
-                          "Other OpenCode sessions",
-                          "Shared service",
-                          shownOther,
+                          projectName(group.project),
+                          group.project,
+                          group.targets,
                           true,
-                        )}
+                        ),
+                      )}
                     </>
                   ) : (
                     <EmptyState
@@ -1163,12 +1223,22 @@ function App() {
                     >
                       {search || filter !== "all"
                         ? "Try another search or session filter."
-                        : scope === "other"
-                          ? "OpenCode sessions appear while they are active in the shared service."
+                        : scope === "other" ||
+                            scope.startsWith("other-project:")
+                          ? "Open a session with opencode or opencode --auto. Live shared-service sessions appear under their project."
                           : "Existing OpenCode work in Orca and the shared service will appear here."}
                     </EmptyState>
                   )}
                 </div>
+                {snapshot.otherSessionsNotice &&
+                  (scope === "all" ||
+                    scope === "other" ||
+                    scope.startsWith("other-project:")) && (
+                    <div className="session-discovery-notice" role="status">
+                      <CircleAlert size={14} />
+                      <span>{snapshot.otherSessionsNotice}</span>
+                    </div>
+                  )}
                 <div className="list-footnote">
                   <ShieldCheck size={13} />
                   <span>
