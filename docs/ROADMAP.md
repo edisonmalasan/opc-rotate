@@ -29,8 +29,9 @@ Outcome: the Windows dashboard can recover an affected existing session through 
 Outcome: a source build and installer work on the target Windows setup.
 
 - [x] Type-check and bundle the web UI with `npm run build`.
-- [x] Pass `npm test`: 8 Node presence-plugin tests and 25 Rust tests at the last verified run, including migration of the shorter default prompt while preserving custom prompts.
-- [x] Build the updated NSIS installer with `npm run tauri -- build` after simplifying project headings and migrating the shorter default prompt.
+- [x] Pass `npm test`: 8 Node presence-plugin tests and 26 Rust tests at the last verified run, including the prompt migration and a Windows no-console regression check.
+- [x] Suppress console popups from background Orca/SoftEther CLI helpers with Windows `CREATE_NO_WINDOW`. A real PowerShell child reports no console handle while command output is still captured.
+- [x] Build the updated NSIS installer with `npm run tauri -- build` after adding Windows console suppression for background CLI helpers.
 - [x] Start a second desktop dev run when port 1420 is occupied. The npm Tauri command selected 1421 for both Vite and Tauri; the page returned HTTP 200, and the existing process on 1420 remained active.
 - [x] Visually verify the workspace with live data in an unobstructed native window. The rebuilt release displayed both Thesis tabs under Other sessions and both Vise tabs under Orca sessions, with separate selected/background labels and Idle status. The sidebar counted five live sessions with no duplicate legacy terminal rows. Native project navigation also passed.
 - [ ] Verify the new exact-session plugin continuation during a real rate-limit event for Orca and outside clients, including a background tab. Parser, receipt, and busy/closed-tab behavior have mock coverage; no live prompt or VPN change was performed for this tab-discovery update.

@@ -8,6 +8,8 @@
 
 The simplified-heading and prompt revision passed the frontend build, 8 Node tests, 25 Rust tests, and the NSIS installer build. Browser checks confirmed folder icons for both sources, all six sample sessions, no terminal headings, the exact shortened default in the prompt editor, and no overflow at 1280 × 820 or 980 × 660. The UI detector returned no findings. The rebuilt native accessibility tree confirmed the shortened default and live Vise tabs directly under the project heading. Monitoring remained paused; no recovery prompt or VPN change was triggered.
 
+The recurring console popup was traced to background CLI launches without Windows console suppression. `src-tauri/src/process.rs` now applies `CREATE_NO_WINDOW` to every Orca/SoftEther helper. A Windows regression test launches PowerShell through that runner and verifies `GetConsoleWindow()` is zero while stdout remains captured. The latest test run passed 8 Node and 26 Rust tests. The frontend and NSIS installer rebuilt successfully, and the updated release was reopened with monitoring paused.
+
 The new transport uses exact session IDs through the connected CLI plugin for both sources. It does not type into whichever Orca tab is selected. Request claims, SDK receipts, and a persisted incident guard prevent automatic duplicate submissions after uncertain responses. Node tests cover independent tab states, background delivery, duplicate requests, busy/closed/expired clients, selection, disconnects, and cleanup. Rust tests cover lease parsing, canonical ownership, exact Orca identity, mocked request receipts, timeout cleanup, and retained closed incidents, alongside existing VPN/controller/API tests.
 
 This tab pass passed 8 Node and 24 Rust tests, the frontend build, and the NSIS installer build. Browser fixtures verified tab selection for both sources, the three-session Idle filter, and no page overflow at 1280 × 820, 980 × 660, and 390 × 844. Impeccable's detector returned no findings. The rebuilt release was also checked in unobstructed native screenshots: Thesis and Vise each displayed two live tabs with Idle status and separate selected/background labels; the sidebar total was five with no duplicate legacy terminal rows. Project navigation passed. Monitoring stayed paused throughout.
@@ -39,6 +41,7 @@ Read-only inspection of the local OpenCode service confirmed the expected `idle`
 | Live tab leases, app-owned plugin install, request/receipt channel | `src-tauri/src/presence.rs`, `integrations/opencode/tui.js` |
 | Per-tab state, exact delivery, selection, and cleanup tests | `integrations/opencode/presence.test.mjs` |
 | Relay selection and VPN connection | `src-tauri/src/vpngate.rs`, `src-tauri/src/softether.rs` |
+| Hidden background CLI helpers and timeout/output handling | `src-tauri/src/process.rs` |
 | Commands and repository rules | `AGENTS.md`, `package.json`, `src-tauri/Cargo.toml` |
 | Frontend design guidance | `.agents/skills/apple-design/SKILL.md`, `.agents/skills/emil-design-eng/SKILL.md`, `.agents/skills/impeccable/SKILL.md`, `.agents/skills/find-animation-opportunities/SKILL.md` |
 

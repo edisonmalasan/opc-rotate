@@ -19,6 +19,7 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 | Orca terminals | `src-tauri/src/orca.rs` |
 | VPN Gate CSV and ranking | `src-tauri/src/vpngate.rs` |
 | SoftEther profile lifecycle | `src-tauri/src/softether.rs` |
+| Background CLI execution and Windows console suppression | `src-tauri/src/process.rs` |
 | UI data contracts | `src/types.ts`, `src-tauri/src/models.rs` |
 | Product intent | `PRODUCT.md`, `docs/ROADMAP.md` |
 
@@ -43,6 +44,7 @@ For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty
 ## Boundaries
 
 - Preserve existing Orca/OpenCode sessions; the app connects to them but does not launch or own them.
+- Run background CLI helpers through `process::run`, which sets Windows `CREATE_NO_WINDOW`. Polling must never open a console or activate Windows Terminal.
 - Touch only SoftEther profiles with the app's `OPCRotate_` prefix. VPN routing affects the machine; wait for other active work to become idle.
 - Require a connected SoftEther account and a changed public IPv4 address before continuing. Bound relay attempts and avoid duplicate prompt submissions after uncertain receipts.
 - Use the shared service for API fallback. A live CLI plugin can report and control its own connected private service through the SDK; do not discover arbitrary private endpoints or copy their credentials.
