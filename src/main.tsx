@@ -98,15 +98,6 @@ function stateLabel(state: string) {
           : "Status unavailable";
 }
 
-function groupTerminals(targets: SessionTarget[]) {
-  const groups = new Map<string, SessionTarget[]>();
-  for (const target of targets) {
-    const key = target.terminalId || "shared-service";
-    groups.set(key, [...(groups.get(key) ?? []), target]);
-  }
-  return [...groups.entries()];
-}
-
 function tabLabel(target: SessionTarget) {
   return target.viaPlugin
     ? !target.clientId
@@ -930,7 +921,6 @@ function App() {
     targets: SessionTarget[],
     other = false,
   ) {
-    const terminals = groupTerminals(targets);
     return (
       <section
         className="session-group"
@@ -939,7 +929,7 @@ function App() {
       >
         <div className="group-heading">
           <span className="group-title">
-            {other ? <Terminal size={14} /> : <Folder size={14} />}
+            <Folder size={14} />
             <strong>{title}</strong>
             <em className="group-source">{other ? "OpenCode" : "Orca"}</em>
             <span>
@@ -950,32 +940,13 @@ function App() {
             {subtitle || "Project directory unavailable"}
           </small>
         </div>
-        {terminals.map(([terminalId, tabs], index) => (
-          <div
-            className="terminal-group"
-            key={terminalId}
-            role="group"
-            aria-label={`${tabs[0].terminalTitle || "Shared service"} ${index + 1} · ${tabs.length} ${tabs.length === 1 ? "session" : "sessions"}`}
-          >
-            <div className="terminal-heading">
-              <Terminal size={13} />
-              <span>
-                {tabs[0].terminalTitle || "Shared service"}
-                {terminals.length > 1 ? ` ${index + 1}` : ""}
-              </span>
-              <small>
-                {tabs.length} {tabs.length === 1 ? "session" : "sessions"}
-              </small>
-            </div>
-            {tabs.map((target) => (
-              <SessionItem
-                key={target.id}
-                target={target}
-                selected={target.id === selectedId}
-                onSelect={() => selectSession(target.id)}
-              />
-            ))}
-          </div>
+        {targets.map((target) => (
+          <SessionItem
+            key={target.id}
+            target={target}
+            selected={target.id === selectedId}
+            onSelect={() => selectSession(target.id)}
+          />
         ))}
       </section>
     );

@@ -699,21 +699,6 @@ button:focus-visible {
   background: transparent;
   text-align: left;
 }
-.terminal-group + .terminal-group {
-  margin-top: 8px;
-}
-.terminal-heading {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 26px 7px;
-  color: var(--dim);
-  font-size: var(--font-caption);
-}
-.terminal-heading small {
-  margin-left: auto;
-  font-size: inherit;
-}
 .tab-context-actions {
   display: flex;
   align-items: center;
