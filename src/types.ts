@@ -33,6 +33,9 @@ export type HistoryEntry = { at: number; level: string; message: string };
 
 export type Snapshot = {
   monitoring: boolean;
+  sessionMonitoring: Record<string, boolean>;
+  terminalMonitoring: Record<string, boolean>;
+  sessionTerminals: Record<string, string>;
   phase: string;
   vpnStatus: string;
   publicIp: string | null;
@@ -53,6 +56,9 @@ export const DEFAULT_PROMPT =
 
 export const EMPTY_SNAPSHOT: Snapshot = {
   monitoring: false,
+  sessionMonitoring: {},
+  terminalMonitoring: {},
+  sessionTerminals: {},
   phase: "idle",
   vpnStatus: "checking",
   publicIp: null,

@@ -49,6 +49,7 @@ struct Inner {
     ip_attempts: HashMap<String, u8>,
     last_recovery_at: HashMap<String, u64>,
     recovery_running: bool,
+    pause_epoch: u64,
 }
 
 enum RecoveryPlan {
@@ -58,6 +59,18 @@ enum RecoveryPlan {
 }
 
 impl Inner {
+    fn prune_unmonitored(&mut self) {
+        let allowed = self
+            .orca_sessions
+            .iter()
+            .chain(&self.other_sessions)
+            .filter(|target| self.settings.monitors(target))
+            .map(|target| target.id.clone())
+            .collect::<HashSet<_>>();
+        self.pending.retain(|id| allowed.contains(id));
+        self.ready_to_resume.retain(|id| allowed.contains(id));
+    }
+
     fn recovery_plan(&self) -> RecoveryPlan {
         if self.pending.is_empty() {
             return RecoveryPlan::None;
@@ -84,6 +97,9 @@ impl Inner {
     fn snapshot(&self) -> Snapshot {
         Snapshot {
             monitoring: self.settings.monitoring,
+            session_monitoring: self.settings.session_monitoring.clone(),
+            terminal_monitoring: self.settings.terminal_monitoring.clone(),
+            session_terminals: self.settings.session_terminals.clone(),
             phase: self.phase.clone(),
             vpn_status: self.vpn_status.clone(),
             public_ip: self.public_ip.clone(),
@@ -178,6 +194,7 @@ impl Controller {
                 ip_attempts: persisted.ip_attempts,
                 last_recovery_at: HashMap::new(),
                 recovery_running: false,
+                pause_epoch: 0,
             }),
             http,
             settings_path,
@@ -299,7 +316,7 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
             "OpenCode tabs appear after the local presence plugin loads. If an open client is missing, reopen it once.".into()))
         } else { None }
     });
-    let new_incidents = {
+    let (new_incidents, bindings_changed) = {
         let mut inner = controller.inner.lock().await;
         inner.other_sessions_notice = notice;
         inner.orca_sessions = retain_incidents(&inner.orca_sessions, orca_targets);
@@ -329,14 +346,31 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
         for target in inner.other_sessions.iter_mut() {
             target.prompt_override = overrides.get(&target.id).cloned();
         }
-        queue_incidents(&mut inner)
+        let bindings = inner
+            .orca_sessions
+            .iter()
+            .chain(&inner.other_sessions)
+            .filter_map(|target| models::terminal_key(target).map(|key| (target.id.clone(), key)))
+            .collect::<Vec<_>>();
+        let mut bindings_changed = false;
+        for (id, key) in bindings {
+            if inner.settings.session_terminals.get(&id) != Some(&key) {
+                inner.settings.session_terminals.insert(id, key);
+                bindings_changed = true;
+            }
+        }
+        inner.prune_unmonitored();
+        (queue_incidents(&mut inner), bindings_changed)
     };
+    if bindings_changed {
+        controller.save().await;
+    }
     if !new_incidents.is_empty() {
         controller
             .record(
                 app,
                 "warning",
-                format!("Rate limit detected: {}", new_incidents.join(", ")),
+                format!("Recovery trigger detected: {}", new_incidents.join(", ")),
             )
             .await;
     } else {
@@ -354,6 +388,9 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
         .cloned()
         .collect::<Vec<_>>();
     for target in targets {
+        if !inner.settings.monitors(&target) {
+            continue;
+        }
         if target.state != "rate-limited" {
             if target.state == "completed" {
                 inner.ip_attempts.remove(&target.id);
@@ -386,7 +423,7 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
         if inner.ip_attempts.get(&target.id).copied().unwrap_or(0) >= 2 {
             inner.handled.insert(key.clone());
             inner.last_error = Some(format!(
-                "Rate limit persisted after two new IPs for {}",
+                "Recovery error persisted after two new IPs for {}",
                 target.title
             ));
             inner.add_history(
@@ -463,6 +500,9 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
 
     // A VPN route change can break another provider call, including one in an Orca terminal.
     for _ in 0..24 {
+        if controller.inner.lock().await.pending.is_empty() {
+            return Ok(());
+        }
         let busy = busy_session_count(controller).await?;
         if busy == 0 {
             break;
@@ -516,6 +556,9 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         return Err("No different VPN Gate relay is available".into());
     }
     let runner = RealVpnRunner::discover()?;
+    if controller.inner.lock().await.pending.is_empty() {
+        return Ok(());
+    }
     let vpn = SoftEther::new(runner, "VPN");
     for profile in vpn.list_profiles().await? {
         if profile.starts_with("OPCRotate_")
@@ -549,6 +592,9 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         controller.save().await;
     }
     for server in servers {
+        if controller.inner.lock().await.pending.is_empty() {
+            return Ok(());
+        }
         let profile = format!(
             "OPCRotate_{}",
             &uuid::Uuid::new_v4().simple().to_string()[..12]
@@ -684,7 +730,7 @@ enum ResumeChannel {
 
 async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: &[String]) {
     for id in pending {
-        let (target, prompt) = {
+        let (target, prompt, pause_epoch) = {
             let inner = controller.inner.lock().await;
             let target = inner.target(id);
             let prompt = inner
@@ -693,7 +739,7 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
                 .get(id)
                 .cloned()
                 .unwrap_or_else(|| inner.settings.global_prompt.clone());
-            (target, prompt)
+            (target, prompt, inner.pause_epoch)
         };
         let Some(target) = target else {
             let mut inner = controller.inner.lock().await;
@@ -741,6 +787,14 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
         };
         {
             let mut inner = controller.inner.lock().await;
+            if !inner.pending.contains(id)
+                || !inner.settings.monitors(&target)
+                || inner.pause_epoch != pause_epoch
+            {
+                inner.pending.remove(id);
+                inner.ready_to_resume.remove(id);
+                continue;
+            }
             if let Some(key) = target.error_key.clone() {
                 // A failed transport may still have delivered the prompt. Never send this incident twice.
                 inner.handled.insert(key);
@@ -762,8 +816,10 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
                 if let Some(key) = &target.error_key {
                     inner.handled.remove(key);
                 }
-                inner.pending.insert(id.clone());
-                inner.ready_to_resume.insert(id.clone());
+                if inner.settings.monitors(&target) && inner.pause_epoch == pause_epoch {
+                    inner.pending.insert(id.clone());
+                    inner.ready_to_resume.insert(id.clone());
+                }
                 drop(inner);
                 controller.save().await;
                 continue;
@@ -861,7 +917,15 @@ async fn set_monitoring(
     state: State<'_, Arc<Controller>>,
     enabled: bool,
 ) -> Result<Snapshot, String> {
-    state.inner.lock().await.settings.monitoring = enabled;
+    {
+        let mut inner = state.inner.lock().await;
+        inner.settings.monitoring = enabled;
+        if !enabled {
+            inner.pause_epoch = inner.pause_epoch.wrapping_add(1);
+            inner.pending.clear();
+            inner.ready_to_resume.clear();
+        }
+    }
     state
         .record(
             &app,
@@ -876,6 +940,39 @@ async fn set_monitoring(
     if enabled {
         scan_sessions(&app, state.inner()).await;
     }
+    Ok(state.snapshot().await)
+}
+
+#[tauri::command]
+async fn set_session_monitoring(
+    app: AppHandle,
+    state: State<'_, Arc<Controller>>,
+    target_id: String,
+    enabled: bool,
+    whole_terminal: bool,
+) -> Result<Snapshot, String> {
+    {
+        let mut inner = state.inner.lock().await;
+        let target = inner.target(&target_id).ok_or("Session was not found")?;
+        if whole_terminal {
+            let targets = inner
+                .orca_sessions
+                .iter()
+                .chain(&inner.other_sessions)
+                .cloned()
+                .collect::<Vec<_>>();
+            inner
+                .settings
+                .monitor_terminal(&target, &targets, enabled)?;
+        } else {
+            inner.settings.session_monitoring.insert(target_id, enabled);
+        }
+        inner.prune_unmonitored();
+    }
+    state.save().await;
+    state.emit(&app).await;
+    // Selection takes effect immediately while the master monitoring switch is on.
+    scan_sessions(&app, state.inner()).await;
     Ok(state.snapshot().await)
 }
 
@@ -983,6 +1080,9 @@ async fn recover_now(
     {
         let mut inner = state.inner.lock().await;
         let target = inner.target(&target_id).ok_or("Session was not found")?;
+        if !inner.settings.monitors(&target) {
+            return Err("Enable monitoring for this session before recovering".into());
+        }
         if (target.via_plugin && target.client_id.is_none())
             || (target.source == "orca" && !target.via_plugin)
             || target.state == "unknown"
@@ -1039,6 +1139,7 @@ pub fn run() {
             get_snapshot,
             refresh_servers,
             set_monitoring,
+            set_session_monitoring,
             set_global_prompt,
             set_prompt_override,
             set_preferred_server,
@@ -1095,7 +1196,48 @@ mod tests {
             ip_attempts: HashMap::new(),
             last_recovery_at: HashMap::new(),
             recovery_running: false,
+            pause_epoch: 0,
         }
+    }
+
+    #[test]
+    fn unmonitored_sessions_do_not_queue_or_resume_and_can_be_reenabled() {
+        let mut state = inner();
+        state.orca_sessions = vec![target(
+            "api:orca",
+            "orca",
+            "rate-limited",
+            Some("orca:failure"),
+        )];
+        state.other_sessions = vec![target(
+            "api:outside",
+            "other",
+            "rate-limited",
+            Some("outside:failure"),
+        )];
+        state
+            .settings
+            .session_monitoring
+            .insert("api:orca".into(), false);
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(!state.pending.contains("api:orca"));
+        assert!(state.pending.contains("api:outside"));
+        state.mark_verified_ip();
+        state
+            .settings
+            .session_monitoring
+            .insert("api:outside".into(), false);
+        state.prune_unmonitored();
+        assert!(state.pending.is_empty() && state.ready_to_resume.is_empty());
+        assert!(matches!(state.recovery_plan(), RecoveryPlan::None));
+        assert!(state.handled.is_empty());
+        state
+            .settings
+            .session_monitoring
+            .insert("api:orca".into(), true);
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(state.pending.contains("api:orca"));
+        assert!(!state.pending.contains("api:outside"));
     }
 
     #[test]

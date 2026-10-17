@@ -27,6 +27,9 @@ export function createPreviewSnapshot(): Snapshot {
   }));
   return {
     monitoring: false,
+    sessionMonitoring: {},
+    terminalMonitoring: {},
+    sessionTerminals: {},
     phase: "idle",
     vpnStatus: "connected",
     publicIp: "203.0.113.42",
