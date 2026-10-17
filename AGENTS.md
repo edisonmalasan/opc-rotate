@@ -15,6 +15,7 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 | Dev server port selection | `scripts/tauri.mjs`, `vite.config.ts` |
 | State, polling, incident queue, recovery | `src-tauri/src/lib.rs` |
 | OpenCode shared service | `src-tauri/src/opencode.rs` |
+| Live OpenCode terminal presence | `src-tauri/src/presence.rs`, `integrations/opencode/tui.js` |
 | Orca terminals | `src-tauri/src/orca.rs` |
 | VPN Gate CSV and ranking | `src-tauri/src/vpngate.rs` |
 | SoftEther profile lifecycle | `src-tauri/src/softether.rs` |
@@ -35,7 +36,7 @@ npm test
 npm run tauri -- build
 ```
 
-`npm run build` includes TypeScript checking. `npm test` runs Rust tests. The Tauri build creates an NSIS installer under `src-tauri/target/release/bundle/nsis/`.
+`npm run build` includes TypeScript checking. `npm test` runs the Node presence-plugin tests and Rust tests. The Tauri build creates an NSIS installer under `src-tauri/target/release/bundle/nsis/`.
 `npm run tauri -- dev` selects an available port from 1420 to 1499 and passes it to both Vite and Tauri; use this command for desktop development when 1420 may be occupied.
 For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty=1` for empty states. Preview edits are local to the page, and fixture data is excluded from release builds. Keep sample data clearly labeled and isolated from live recovery.
 
@@ -46,6 +47,8 @@ For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty
 - Require a connected SoftEther account and a changed public IPv4 address before continuing. Bound relay attempts and avoid duplicate prompt submissions after uncertain receipts.
 - The first version uses OpenCode's shared loopback service. Private `--standalone` services require explicit support.
 - UI session lists represent live work, not historical shared-service records. Preserve an already detected rate-limit incident long enough to recover it.
+- An idle terminal is live when its presence lease identifies the current shared-service PID. Saved TUI tabs and session timestamps are not proof of a live client. Deduplicate Orca ownership by session ID, never by the whole project directory. Keep both sources grouped by project.
+- The app installs only its own `opc-rotate-presence/tui.js` under OpenCode's global plugin directory; it does not rewrite OpenCode configuration or other plugins. Keep presence records free of credentials and prompt text.
 - User requests take precedence over this guide. The current user explicitly requested separate commits pushed to `main`.
 
 ## Working method
