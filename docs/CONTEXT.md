@@ -4,7 +4,9 @@
 
 **OpenCode Recovery** is a Windows Tauri dashboard for IP-sensitive OpenCode rate limits. It reads public VPN Gate relays, connects with the installed SoftEther client, verifies a changed public IPv4 address, then continues affected existing sessions. The primary user has OpenCode work in Orca terminals across projects and in the shared OpenCode service.
 
-**Current focus:** verify the updated project groups visually in the native window and observe outside-session continuation during a real rate-limit event. Live-session filtering and the per-project layout are implemented; 17 Rust tests, the frontend build, and the updated NSIS installer build pass. An Orca live recovery succeeded earlier. Native screenshot capture was covered by another fullscreen application.
+**Current focus:** verify the project groups visually in an unobstructed native window and observe outside-session continuation during a real rate-limit event. Live-session filtering and the per-project layout are implemented; 17 Rust tests passed at the last Rust test run. An Orca live recovery succeeded earlier. The redesigned frontend and NSIS installer build pass. Browser visual checks covered 1280px and 390px widths; the running native app's accessibility tree showed two Orca project groups and 87 relays, but its screenshot was covered by another window.
+
+The dashboard now uses a compact connection and session hierarchy, lighter surfaces, and restrained motion for project expansion, prompt editing, and button presses. Browser previews show an explicit preview notice instead of a Tauri API error; live controls remain available in the desktop app.
 
 The desktop dev command now selects an available port from 1420 to 1499 and passes it to both Vite and Tauri. With an existing Vite process on 1420, a second desktop dev run launched on 1421 and served the app there. Direct `npm run dev` also falls back to the next available port.
 
@@ -22,7 +24,7 @@ Read-only inspection of the local OpenCode service confirmed the expected `idle`
 | Session discovery and prompts | `src-tauri/src/opencode.rs`, `src-tauri/src/orca.rs` |
 | Relay selection and VPN connection | `src-tauri/src/vpngate.rs`, `src-tauri/src/softether.rs` |
 | Commands and repository rules | `AGENTS.md`, `package.json`, `src-tauri/Cargo.toml` |
-| Frontend design guidance | `.agents/skills/apple-design/SKILL.md`, `.agents/skills/emil-design-eng/SKILL.md` |
+| Frontend design guidance | `.agents/skills/apple-design/SKILL.md`, `.agents/skills/emil-design-eng/SKILL.md`, `.agents/skills/find-animation-opportunities/SKILL.md` |
 
 ## Important constraints
 
