@@ -9,6 +9,7 @@ pub struct OpenCodeClient {
     http: reqwest::Client,
     base: Url,
     password: String,
+    pub service_pid: u32,
 }
 
 impl OpenCodeClient {
@@ -36,10 +37,16 @@ impl OpenCodeClient {
             .as_str()
             .ok_or("OpenCode service password is missing")?
             .to_string();
+        let service_pid = json["pid"]
+            .as_u64()
+            .and_then(|pid| u32::try_from(pid).ok())
+            .filter(|pid| *pid > 0)
+            .ok_or("OpenCode service PID is missing")?;
         Ok(Self {
             http,
             base,
             password,
+            service_pid,
         })
     }
 
@@ -68,36 +75,36 @@ impl OpenCodeClient {
 
     pub async fn list_targets(
         &self,
-        orca_dirs: &[String],
+        presence: &crate::presence::Presence,
         previously_active: &HashSet<String>,
     ) -> Result<Vec<SessionTarget>, String> {
         let active = self.active_ids().await?;
-        let mut ids = active.iter().cloned().collect::<Vec<_>>();
+        let live = active
+            .union(&presence.open)
+            .cloned()
+            .collect::<HashSet<_>>();
+        let mut ids = live.iter().cloned().collect::<Vec<_>>();
         ids.sort();
         let mut previously_active_ids = previously_active
-            .difference(&active)
+            .difference(&live)
             .cloned()
             .collect::<Vec<_>>();
         previously_active_ids.sort();
         ids.extend(previously_active_ids);
-        let excluded = orca_dirs
-            .iter()
-            .map(|s| normalize_path(s))
-            .collect::<HashSet<_>>();
         let mut targets = Vec::new();
         for id in ids {
+            if presence.orca.contains(&id) {
+                continue;
+            }
             let session = match self.get(&format!("/api/session/{id}")).await {
                 Ok(value) => value["data"].clone(),
-                Err(error) if active.contains(&id) => return Err(error),
+                Err(error) if live.contains(&id) => return Err(error),
                 Err(_) => continue,
             };
             if session["id"].as_str() != Some(id.as_str()) {
                 return Err(format!("OpenCode returned the wrong session for {id}"));
             }
             let project = session["location"]["directory"].as_str().unwrap_or("");
-            if excluded.contains(&normalize_path(project)) {
-                continue;
-            }
             let updated_at = session["time"]["updated"].as_u64().unwrap_or_else(now_ms);
             let path = format!("/api/session/{id}/message?limit=1&order=desc");
             let latest = self.get(&path).await.ok();
@@ -111,7 +118,7 @@ impl OpenCodeClient {
                 message.and_then(rate_limit_error)
             };
             if !include_other_session(
-                active.contains(&id),
+                live.contains(&id),
                 previously_active.contains(&id),
                 error.is_some(),
             ) {
@@ -195,12 +202,6 @@ fn rate_limit_error(message: &Value) -> Option<String> {
     }
 }
 
-fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/")
-        .trim_end_matches('/')
-        .to_ascii_lowercase()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +255,7 @@ mod tests {
                 .unwrap(),
             base: Url::parse(&format!("http://{address}/")).unwrap(),
             password: "test-password".into(),
+            service_pid: 10,
         };
         (client, handle)
     }
@@ -270,14 +272,6 @@ mod tests {
                 .is_none()
         );
         assert!(rate_limit_error(&serde_json::json!({"type":"idle","outcome":"failed","error":{"status":500,"message":"server error"}})).is_none());
-    }
-
-    #[test]
-    fn normalizes_windows_paths_for_orca_deduplication() {
-        assert_eq!(
-            normalize_path(r"C:\Projects\Vise\"),
-            normalize_path("c:/projects/vise")
-        );
     }
 
     #[tokio::test]
@@ -309,9 +303,13 @@ mod tests {
             http: reqwest::Client::new(),
             base: Url::parse(&format!("http://{address}/")).unwrap(),
             password: "test-password".into(),
+            service_pid: 10,
         };
         let targets = client
-            .list_targets(&[], &HashSet::from(["failed".to_string()]))
+            .list_targets(
+                &crate::presence::Presence::default(),
+                &HashSet::from(["failed".to_string()]),
+            )
             .await
             .unwrap();
         server.join().unwrap();
@@ -324,6 +322,73 @@ mod tests {
             targets[1].error_key.as_deref(),
             Some("api:failed:failure-1")
         );
+    }
+
+    #[tokio::test]
+    async fn shows_open_idle_outside_session_in_same_project_and_excludes_exact_orca_id() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for _ in 0..3 {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 4096];
+                let count = socket.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]).to_string();
+                let body = if request.starts_with("GET /api/session/active ") {
+                    r#"{"data":{"orca-owned":{"type":"running"}}}"#
+                } else if request.starts_with("GET /api/session/outside ") {
+                    r#"{"data":{"id":"outside","title":"Open idle work","location":{"directory":"C:/same-project"}}}"#
+                } else if request.starts_with("GET /api/session/outside/message?") {
+                    r#"{"data":[]}"#
+                } else {
+                    panic!(
+                        "Unexpected API request: {}",
+                        request.lines().next().unwrap_or("")
+                    );
+                };
+                requests.push(request);
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).unwrap();
+            }
+            requests
+        });
+        let client = OpenCodeClient {
+            http: reqwest::Client::new(),
+            base: Url::parse(&format!("http://{address}/")).unwrap(),
+            password: "test-password".into(),
+            service_pid: 10,
+        };
+        let presence = crate::presence::Presence {
+            open: HashSet::from(["outside".into()]),
+            orca: HashSet::from(["orca-owned".into()]),
+            clients: 1,
+        };
+        let targets = client
+            .list_targets(&presence, &HashSet::new())
+            .await
+            .unwrap();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].id, "api:outside");
+        assert_eq!(targets[0].state, "idle");
+        assert_eq!(targets[0].project, "C:/same-project");
+        let requests = server.join().unwrap();
+        assert!(!requests
+            .iter()
+            .any(|request| request.starts_with("GET /api/session?")));
+    }
+
+    #[tokio::test]
+    async fn closed_idle_sessions_are_not_replaced_with_history() {
+        let (client, server) = mock_service(Some(r#"{"data":{}}"#));
+        let targets = client
+            .list_targets(&crate::presence::Presence::default(), &HashSet::new())
+            .await
+            .unwrap();
+        assert!(targets.is_empty());
+        assert!(server
+            .join()
+            .unwrap()
+            .starts_with("GET /api/session/active "));
     }
 
     #[tokio::test]

@@ -1,6 +1,7 @@
 mod models;
 mod opencode;
 mod orca;
+mod presence;
 mod process;
 mod softether;
 mod vpngate;
@@ -34,6 +35,7 @@ struct Inner {
     refreshed_at: Option<u64>,
     orca_sessions: Vec<SessionTarget>,
     other_sessions: Vec<SessionTarget>,
+    other_sessions_notice: Option<String>,
     previously_active_other: HashSet<String>,
     history: Vec<HistoryEntry>,
     phase: String,
@@ -90,6 +92,7 @@ impl Inner {
             refreshed_at: self.refreshed_at,
             orca_sessions: self.orca_sessions.clone(),
             other_sessions: self.other_sessions.clone(),
+            other_sessions_notice: self.other_sessions_notice.clone(),
             history: self.history.clone(),
             global_prompt: self.settings.global_prompt.clone(),
             preferred_server: self.settings.preferred_server.clone(),
@@ -160,6 +163,7 @@ impl Controller {
                 refreshed_at: None,
                 orca_sessions: Vec::new(),
                 other_sessions: Vec::new(),
+                other_sessions_notice: None,
                 previously_active_other: HashSet::new(),
                 history: persisted.history,
                 phase: "ready".into(),
@@ -268,34 +272,33 @@ async fn refresh_catalog(app: &AppHandle, controller: &Arc<Controller>) -> Resul
 async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
     let orca_result = orca::list_targets().await;
     let orca_targets = orca_result.as_ref().cloned().unwrap_or_default();
-    let orca_dirs = if orca_result.is_ok() {
-        orca_targets
-            .iter()
-            .map(|t| t.project.clone())
-            .collect::<Vec<_>>()
-    } else {
-        controller
-            .inner
-            .lock()
-            .await
-            .orca_sessions
-            .iter()
-            .map(|t| t.project.clone())
-            .collect::<Vec<_>>()
-    };
     let previously_active = controller
         .inner
         .lock()
         .await
         .previously_active_other
         .clone();
-    let api_result = match opencode::OpenCodeClient::discover(controller.http.clone()) {
-        Ok(client) => client.list_targets(&orca_dirs, &previously_active).await,
-        Err(e) => Err(e),
+    let plugin_error = presence::install().err();
+    let (api_result, setup_notice) = match opencode::OpenCodeClient::discover(
+        controller.http.clone(),
+    ) {
+        Ok(client) => match presence::discover(client.service_pid) {
+            Ok(presence) => {
+                let notice = plugin_error.or_else(|| (presence.clients == 0).then(||
+                    "Idle terminals appear after OpenCode loads the local presence plugin. If an open terminal is missing, reopen that OpenCode client once. opencode --auto is supported.".into()));
+                (
+                    client.list_targets(&presence, &previously_active).await,
+                    notice,
+                )
+            }
+            Err(error) => (Err(error), None),
+        },
+        Err(e) => (Err(e), plugin_error),
     };
     let other_targets = api_result.as_ref().cloned().unwrap_or_default();
     let new_incidents = {
         let mut inner = controller.inner.lock().await;
+        inner.other_sessions_notice = api_result.as_ref().err().cloned().or(setup_notice);
         if orca_result.is_ok() {
             inner.orca_sessions = orca_targets;
         }
@@ -307,6 +310,11 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
                 .filter(|target| target.state == "busy" || target.state == "rate-limited")
                 .filter_map(|target| target.id.strip_prefix("api:").map(str::to_string))
                 .collect();
+        } else {
+            // A dead or restarted service must not leave old busy/idle rows looking live.
+            inner
+                .other_sessions
+                .retain(|target| target.state == "rate-limited");
         }
         let overrides = inner.settings.prompt_overrides.clone();
         for target in inner.orca_sessions.iter_mut() {
@@ -968,6 +976,7 @@ mod tests {
             refreshed_at: None,
             orca_sessions: Vec::new(),
             other_sessions: Vec::new(),
+            other_sessions_notice: None,
             previously_active_other: HashSet::new(),
             history: Vec::new(),
             phase: "ready".into(),

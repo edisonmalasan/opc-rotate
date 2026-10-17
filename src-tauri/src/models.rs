@@ -72,6 +72,7 @@ pub struct Snapshot {
     pub refreshed_at: Option<u64>,
     pub orca_sessions: Vec<SessionTarget>,
     pub other_sessions: Vec<SessionTarget>,
+    pub other_sessions_notice: Option<String>,
     pub history: Vec<HistoryEntry>,
     pub global_prompt: String,
     pub preferred_server: Option<String>,

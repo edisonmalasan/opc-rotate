@@ -34,6 +34,7 @@ export type Snapshot = {
   refreshedAt: number | null;
   orcaSessions: SessionTarget[];
   otherSessions: SessionTarget[];
+  otherSessionsNotice: string | null;
   history: HistoryEntry[];
   globalPrompt: string;
   preferredServer: string | null;
@@ -53,6 +54,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   refreshedAt: null,
   orcaSessions: [],
   otherSessions: [],
+  otherSessionsNotice: null,
   history: [],
   globalPrompt: DEFAULT_PROMPT,
   preferredServer: null,
