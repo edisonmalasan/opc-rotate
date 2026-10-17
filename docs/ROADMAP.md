@@ -11,17 +11,17 @@ Outcome: the Windows dashboard can recover an affected existing session through 
 - [x] Try at most five app-owned SoftEther profiles, cancel failed or slow attempts, and confirm a changed public IPv4 address. Covered by mock tests and live recovery that skipped a failed candidate.
 - [x] Continue a rate-limited Orca terminal in place once after a verified switch. Confirmed in the existing terminal during live recovery.
 - [x] Queue incidents, avoid uncertain duplicate prompt sends, and stop after two verified new IPs for a session. Covered by Rust tests.
-- [ ] Show only live outside OpenCode sessions while retaining observed rate-limit incidents for recovery. The current build still lists recent historical sessions.
-- [ ] Separate Orca terminals by project in the dashboard. The current build uses one flat Orca list.
+- [x] Show only live outside OpenCode sessions while retaining observed rate-limit incidents for recovery. Covered by the session API test; on the target machine the shared service returned zero active IDs and 50 recent records.
+- [x] Separate Orca terminals by project in the dashboard. Verified by the TypeScript/Vite build; the UI groups on Orca worktree paths.
 
 ## 2. Release verification — In progress
 
 Outcome: a source build and installer work on the target Windows setup.
 
 - [x] Type-check and bundle the web UI with `npm run build`.
-- [x] Pass the Rust test suite (`npm test`, 15 tests at the last verified run).
-- [x] Build the NSIS installer with `npm run tauri -- build` before the latest requested changes.
-- [ ] Rebuild and visually verify the installer after active-session filtering and Orca grouping.
+- [x] Pass the Rust test suite (`npm test`, 16 tests at the last verified run).
+- [x] Build the updated NSIS installer with `npm run tauri -- build` after active-session filtering and Orca grouping.
+- [ ] Visually verify the updated project groups in the native window. The capture during this pass was covered by another fullscreen application.
 - [ ] Verify outside OpenCode session continuation during a real rate-limit event. Existing live evidence covers Orca; outside-session submission has mock API coverage only.
 
 ## Deferred

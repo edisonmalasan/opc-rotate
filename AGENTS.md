@@ -4,7 +4,7 @@
 
 OpenCode Recovery is a Windows desktop dashboard for recovering live OpenCode work from IP-sensitive rate limits. It uses VPN Gate relay data, the installed SoftEther VPN Client, Orca terminal controls, and OpenCode's shared local service. See [README.md](README.md) for use and [docs/CONTEXT.md](docs/CONTEXT.md) for a source map.
 
-The initial Tauri application, Rust controller, tests, and Windows installer build exist. Active-session filtering and per-project Orca layout are in progress. [docs/ROADMAP.md](docs/ROADMAP.md) records verified progress; inspect source and tests before changing its status.
+The Tauri application, Rust controller, active-session filtering, per-project Orca layout, tests, and Windows installer build exist. [docs/ROADMAP.md](docs/ROADMAP.md) records verified progress and remaining live checks; inspect source and tests before changing its status.
 
 ## Source map
 
