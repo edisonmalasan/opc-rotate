@@ -31,4 +31,10 @@ Outcome: a source build and installer work on the target Windows setup.
 - [ ] Discover private OpenCode `--standalone` services after explicit server setup is designed.
 - [ ] Verify provider egress over IPv6 as well as IPv4; current checks confirm IPv4 only.
 
+## SoftEther setup for downloaded releases — Later
+
+- [ ] Check for the installed SoftEther VPN Client, its running service, `vpncmd`, and an enabled virtual adapter named `VPN` before recovery; show specific setup steps for anything missing.
+- [ ] Offer a guided link to the official SoftEther VPN Client installer. Keep SoftEther as a separate installed dependency for the first public release.
+- [ ] Revisit a single installer that runs the official SoftEther installer as a prerequisite, after checking its redistribution terms, administrator prompts, existing installations, and update behavior. Do not bundle only the Client Manager or `vpncmd` executable; the service and virtual adapter are also required.
+
 Update this file only after observing the outcome or running the relevant check. Technical details live in source and [CONTEXT.md](CONTEXT.md).
