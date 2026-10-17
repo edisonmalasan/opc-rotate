@@ -60,10 +60,10 @@ impl OpenCodeClient {
 
     pub async fn active_ids(&self) -> Result<HashSet<String>, String> {
         let value = self.get("/api/session/active").await?;
-        Ok(value["data"]
+        value["data"]
             .as_object()
             .map(|map| map.keys().cloned().collect())
-            .unwrap_or_default())
+            .ok_or("OpenCode did not return active sessions".into())
     }
 
     pub async fn list_targets(
@@ -71,25 +71,31 @@ impl OpenCodeClient {
         orca_dirs: &[String],
         previously_active: &HashSet<String>,
     ) -> Result<Vec<SessionTarget>, String> {
-        let value = self.get("/api/session?limit=50&order=desc").await?;
-        let sessions = value["data"]
-            .as_array()
-            .ok_or("OpenCode did not return sessions")?;
         let active = self.active_ids().await?;
+        let mut ids = active.iter().cloned().collect::<Vec<_>>();
+        ids.sort();
+        let mut previously_active_ids = previously_active
+            .difference(&active)
+            .cloned()
+            .collect::<Vec<_>>();
+        previously_active_ids.sort();
+        ids.extend(previously_active_ids);
         let excluded = orca_dirs
             .iter()
             .map(|s| normalize_path(s))
             .collect::<HashSet<_>>();
         let mut targets = Vec::new();
-        for session in sessions {
-            let Some(id) = session["id"].as_str() else {
-                continue;
+        for id in ids {
+            let session = match self.get(&format!("/api/session/{id}")).await {
+                Ok(value) => value["data"].clone(),
+                Err(error) if active.contains(&id) => return Err(error),
+                Err(_) => continue,
             };
+            if session["id"].as_str() != Some(id.as_str()) {
+                return Err(format!("OpenCode returned the wrong session for {id}"));
+            }
             let project = session["location"]["directory"].as_str().unwrap_or("");
             if excluded.contains(&normalize_path(project)) {
-                continue;
-            }
-            if !active.contains(id) && !previously_active.contains(id) {
                 continue;
             }
             let updated_at = session["time"]["updated"].as_u64().unwrap_or_else(now_ms);
@@ -99,14 +105,14 @@ impl OpenCodeClient {
                 .as_ref()
                 .and_then(|v| v["data"].as_array())
                 .and_then(|a| a.first());
-            let error = if active.contains(id) {
+            let error = if active.contains(&id) {
                 None
             } else {
                 message.and_then(rate_limit_error)
             };
             if !include_other_session(
-                active.contains(id),
-                previously_active.contains(id),
+                active.contains(&id),
+                previously_active.contains(&id),
                 error.is_some(),
             ) {
                 continue;
@@ -125,7 +131,7 @@ impl OpenCodeClient {
                 project: project.into(),
                 state: if error.is_some() {
                     "rate-limited"
-                } else if active.contains(id) {
+                } else if active.contains(&id) {
                     "busy"
                 } else {
                     "idle"
@@ -279,15 +285,17 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
-            for _ in 0..4 {
+            for _ in 0..5 {
                 let (mut socket, _) = listener.accept().unwrap();
                 let mut buffer = [0u8; 4096];
                 let count = socket.read(&mut buffer).unwrap();
                 let request = String::from_utf8_lossy(&buffer[..count]);
-                let body = if request.starts_with("GET /api/session?") {
-                    r#"{"data":[{"id":"live","title":"Live","location":{"directory":"C:/live"},"time":{"updated":100}},{"id":"failed","title":"Failed","location":{"directory":"C:/failed"},"time":{"updated":101}},{"id":"old","title":"Old","location":{"directory":"C:/old"},"time":{"updated":102}}]}"#
-                } else if request.starts_with("GET /api/session/active ") {
+                let body = if request.starts_with("GET /api/session/active ") {
                     r#"{"data":{"live":{}}}"#
+                } else if request.starts_with("GET /api/session/live ") {
+                    r#"{"data":{"id":"live","title":"Live","location":{"directory":"C:/live"},"time":{"updated":100}}}"#
+                } else if request.starts_with("GET /api/session/failed ") {
+                    r#"{"data":{"id":"failed","title":"Failed","location":{"directory":"C:/failed"},"time":{"updated":101}}}"#
                 } else if request.starts_with("GET /api/session/failed/message?") {
                     r#"{"data":[{"id":"failure-1","type":"idle","outcome":"failed","error":{"type":"provider.rate-limit","status":429,"message":"Rate limit exceeded"}}]}"#
                 } else {

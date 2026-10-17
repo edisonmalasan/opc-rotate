@@ -124,16 +124,6 @@ pub async fn is_idle(handle: &str) -> Result<bool, String> {
     Ok(value["result"]["wait"]["satisfied"].as_bool() == Some(true))
 }
 
-pub async fn wait_until_idle(handle: &str, checks: usize) -> Result<bool, String> {
-    for _ in 0..checks {
-        if is_idle(handle).await? {
-            return Ok(true);
-        }
-        tokio::time::sleep(Duration::from_secs(5)).await;
-    }
-    Ok(false)
-}
-
 pub async fn send_prompt(handle: &str, prompt: &str) -> Result<String, String> {
     let value = cli(
         &[

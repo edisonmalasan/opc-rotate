@@ -42,13 +42,43 @@ struct Inner {
     connected_server: Option<VpnServer>,
     last_error: Option<String>,
     pending: HashSet<String>,
+    ready_to_resume: HashSet<String>,
     handled: HashSet<String>,
     ip_attempts: HashMap<String, u8>,
     last_recovery_at: HashMap<String, u64>,
     recovery_running: bool,
 }
 
+enum RecoveryPlan {
+    None,
+    Resume(Vec<String>),
+    Rotate(Vec<String>),
+}
+
 impl Inner {
+    fn recovery_plan(&self) -> RecoveryPlan {
+        if self.pending.is_empty() {
+            return RecoveryPlan::None;
+        }
+        let ready = self
+            .pending
+            .intersection(&self.ready_to_resume)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !ready.is_empty() {
+            RecoveryPlan::Resume(ready)
+        } else {
+            RecoveryPlan::Rotate(self.pending.iter().cloned().collect())
+        }
+    }
+
+    fn mark_verified_ip(&mut self) {
+        for id in self.pending.clone() {
+            *self.ip_attempts.entry(id.clone()).or_default() += 1;
+            self.ready_to_resume.insert(id);
+        }
+    }
+
     fn snapshot(&self) -> Snapshot {
         Snapshot {
             monitoring: self.settings.monitoring,
@@ -138,6 +168,7 @@ impl Controller {
                 connected_server: persisted.connected_server,
                 last_error: None,
                 pending: HashSet::new(),
+                ready_to_resume: HashSet::new(),
                 handled: persisted.handled,
                 ip_attempts: persisted.ip_attempts,
                 last_recovery_at: HashMap::new(),
@@ -388,7 +419,12 @@ async fn start_recovery_if_needed(app: AppHandle, controller: Arc<Controller>) {
             let mut inner = controller.inner.lock().await;
             inner.recovery_running = false;
             if inner.phase != "attention" {
-                inner.phase = "ready".into();
+                inner.phase = if inner.ready_to_resume.is_empty() {
+                    "ready"
+                } else {
+                    "waiting for affected sessions"
+                }
+                .into();
             }
         }
         controller.emit(&app).await;
@@ -396,13 +432,15 @@ async fn start_recovery_if_needed(app: AppHandle, controller: Arc<Controller>) {
 }
 
 async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), String> {
-    let pending = {
-        let inner = controller.inner.lock().await;
-        inner.pending.iter().cloned().collect::<Vec<_>>()
+    let plan = controller.inner.lock().await.recovery_plan();
+    let pending = match plan {
+        RecoveryPlan::None => return Ok(()),
+        RecoveryPlan::Resume(ready) => {
+            resume_pending(app, controller, &ready).await;
+            return Ok(());
+        }
+        RecoveryPlan::Rotate(pending) => pending,
     };
-    if pending.is_empty() {
-        return Ok(());
-    }
 
     // A VPN route change can break another provider call, including one in an Orca terminal.
     for _ in 0..24 {
@@ -547,9 +585,7 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
             inner.phase = "resuming sessions".into();
             inner.last_error = None;
             // Incidents discovered during the connection attempt share this verified IP.
-            for id in inner.pending.clone() {
-                *inner.ip_attempts.entry(id).or_default() += 1;
-            }
+            inner.mark_verified_ip();
         }
         controller
             .record(
@@ -598,10 +634,15 @@ async fn busy_session_count(controller: &Arc<Controller>) -> Result<usize, Strin
     Ok(busy)
 }
 
+enum ResumeChannel {
+    Orca(String),
+    Api(opencode::OpenCodeClient, String),
+}
+
 async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: &[String]) {
     for id in pending {
         let (target, prompt) = {
-            let mut inner = controller.inner.lock().await;
+            let inner = controller.inner.lock().await;
             let target = inner.target(id);
             let prompt = inner
                 .settings
@@ -609,27 +650,55 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
                 .get(id)
                 .cloned()
                 .unwrap_or_else(|| inner.settings.global_prompt.clone());
-            if let Some(key) = target.as_ref().and_then(|t| t.error_key.clone()) {
+            (target, prompt)
+        };
+        let Some(target) = target else {
+            let mut inner = controller.inner.lock().await;
+            inner.pending.remove(id);
+            inner.ready_to_resume.remove(id);
+            continue;
+        };
+        let channel: Result<Option<ResumeChannel>, String> = if target.source == "orca" {
+            let handle = id.trim_start_matches("orca:");
+            orca::is_idle(handle)
+                .await
+                .map(|idle| idle.then(|| ResumeChannel::Orca(handle.to_string())))
+        } else {
+            let session_id = id.trim_start_matches("api:");
+            match opencode::OpenCodeClient::discover(controller.http.clone()) {
+                Ok(client) => client.active_ids().await.map(|active| {
+                    (!active.contains(session_id))
+                        .then(|| ResumeChannel::Api(client, session_id.to_string()))
+                }),
+                Err(error) => Err(error),
+            }
+        };
+        let channel = match channel {
+            Ok(Some(channel)) => channel,
+            Ok(None) => continue,
+            Err(error) => {
+                controller
+                    .record(
+                        app,
+                        "warning",
+                        format!("Waiting to continue {}: {error}", target.title),
+                    )
+                    .await;
+                continue;
+            }
+        };
+        {
+            let mut inner = controller.inner.lock().await;
+            if let Some(key) = target.error_key.clone() {
                 // A failed transport may still have delivered the prompt. Never send this incident twice.
                 inner.handled.insert(key);
             }
             inner.pending.remove(id);
-            (target, prompt)
-        };
-        let Some(target) = target else { continue };
-        let result = if target.source == "orca" {
-            let handle = id.trim_start_matches("orca:");
-            match orca::wait_until_idle(handle, 12).await {
-                Ok(true) => orca::send_prompt(handle, &prompt).await,
-                Ok(false) => Err("Orca terminal is still busy; prompt was not sent".into()),
-                Err(error) => Err(error),
-            }
-        } else {
-            let session_id = id.trim_start_matches("api:");
-            match opencode::OpenCodeClient::discover(controller.http.clone()) {
-                Ok(client) => client.prompt(session_id, &prompt).await,
-                Err(error) => Err(error),
-            }
+            inner.ready_to_resume.remove(id);
+        }
+        let result = match channel {
+            ResumeChannel::Orca(handle) => orca::send_prompt(&handle, &prompt).await,
+            ResumeChannel::Api(client, session_id) => client.prompt(&session_id, &prompt).await,
         };
         match result {
             Ok(receipt) => {
@@ -907,6 +976,7 @@ mod tests {
             connected_server: None,
             last_error: None,
             pending: HashSet::new(),
+            ready_to_resume: HashSet::new(),
             handled: HashSet::new(),
             ip_attempts: HashMap::new(),
             last_recovery_at: HashMap::new(),
@@ -933,6 +1003,26 @@ mod tests {
         state.handled.insert("two:failure".into());
         state.handled.insert("three:failure".into());
         assert!(queue_incidents(&mut state).is_empty());
+    }
+
+    #[test]
+    fn verified_ip_retries_busy_continuations_before_rotating_again() {
+        let mut state = inner();
+        state.pending.extend(["orca:one".into(), "api:two".into()]);
+        assert!(matches!(state.recovery_plan(), RecoveryPlan::Rotate(_)));
+        state.mark_verified_ip();
+        assert_eq!(state.ip_attempts["orca:one"], 1);
+        assert_eq!(state.ip_attempts["api:two"], 1);
+        match state.recovery_plan() {
+            RecoveryPlan::Resume(ids) => assert_eq!(ids.len(), 2),
+            _ => panic!("verified IP should resume pending sessions"),
+        }
+        state.pending.remove("orca:one");
+        state.ready_to_resume.remove("orca:one");
+        assert!(matches!(state.recovery_plan(), RecoveryPlan::Resume(_)));
+        state.pending.remove("api:two");
+        state.ready_to_resume.remove("api:two");
+        assert!(matches!(state.recovery_plan(), RecoveryPlan::None));
     }
 
     #[test]
