@@ -18,7 +18,6 @@ import {
   Radio,
   RefreshCw,
   RotateCcw,
-  Route,
   Search,
   Settings2,
   ShieldCheck,
@@ -32,6 +31,8 @@ import {
   type VpnServer,
 } from "./types";
 import "./styles.css";
+import appIcon from "./assets/app-icon.png";
+import { changeMonitoring, isMonitored, terminalKey } from "./monitoring";
 
 type View = "sessions" | "relays" | "activity";
 type SessionFilter = "all" | "limited" | "busy" | "idle";
@@ -164,41 +165,70 @@ function EmptyState({
 function SessionItem({
   target,
   selected,
+  monitored,
+  monitoringDisabled,
+  onMonitoringChange,
   onSelect,
 }: {
   target: SessionTarget;
   selected: boolean;
+  monitored: boolean;
+  monitoringDisabled: boolean;
+  onMonitoringChange: (enabled: boolean) => void;
   onSelect: () => void;
 }) {
   return (
-    <button
-      className={`session-item ${selected ? "selected" : ""}`}
-      data-session-id={target.id}
-      aria-pressed={selected}
-      onClick={onSelect}
-    >
-      <span className={`session-symbol ${target.state}`}>
-        <Terminal size={18} strokeWidth={1.6} />
-      </span>
-      <span className="session-item-copy">
-        <strong title={sessionTitle(target.title)}>
-          {sessionTitle(target.title)}
-        </strong>
-        <small>
-          {tabLabel(target)}
-          {target.promptOverride && (
-            <>
-              <span>·</span>Custom prompt
-            </>
-          )}
-        </small>
-      </span>
-      <StateLabel state={target.state} />
-      <time dateTime={new Date(target.updatedAt).toISOString()}>
-        {timeAgo(target.updatedAt)}
-      </time>
-      <ChevronRight className="row-chevron" size={15} />
-    </button>
+    <div className="session-entry">
+      <label
+        className="session-monitor"
+        title={
+          monitored
+            ? "Included when monitoring is on"
+            : "Excluded from automatic recovery"
+        }
+      >
+        <input
+          type="checkbox"
+          aria-label={`Monitor ${sessionTitle(target.title)}`}
+          checked={monitored}
+          disabled={monitoringDisabled}
+          onChange={(event) => onMonitoringChange(event.target.checked)}
+        />
+      </label>
+      <button
+        className={`session-item ${selected ? "selected" : ""}`}
+        data-session-id={target.id}
+        aria-pressed={selected}
+        onClick={onSelect}
+      >
+        <span className={`session-symbol ${target.state}`}>
+          <Terminal size={18} strokeWidth={1.6} />
+        </span>
+        <span className="session-item-copy">
+          <strong title={sessionTitle(target.title)}>
+            {sessionTitle(target.title)}
+          </strong>
+          <small>
+            {tabLabel(target)}
+            {!monitored && (
+              <>
+                <span>·</span>Not monitored
+              </>
+            )}
+            {target.promptOverride && (
+              <>
+                <span>·</span>Custom prompt
+              </>
+            )}
+          </small>
+        </span>
+        <StateLabel state={target.state} />
+        <time dateTime={new Date(target.updatedAt).toISOString()}>
+          {timeAgo(target.updatedAt)}
+        </time>
+        <ChevronRight className="row-chevron" size={15} />
+      </button>
+    </div>
   );
 }
 
@@ -230,6 +260,15 @@ function SessionInspector({
         </EmptyState>
       </aside>
     );
+  const monitored = isMonitored(snapshot, target);
+  const siblings = [...snapshot.orcaSessions, ...snapshot.otherSessions].filter(
+    (item) => terminalKey(item) === terminalKey(target),
+  );
+  const terminalIncluded =
+    snapshot.terminalMonitoring[terminalKey(target) || ""] ?? true;
+  const terminalMixed = siblings.some(
+    (item) => isMonitored(snapshot, item) !== terminalIncluded,
+  );
   return (
     <aside className="inspector" aria-label="Selected session details">
       <div className="inspector-toolbar">
@@ -268,6 +307,53 @@ function SessionInspector({
             </button>
           </div>
         )}
+        <section className="inspector-section">
+          <h3>Automatic recovery</h3>
+          <label className="monitor-setting">
+            <span>Monitor this session</span>
+            <input
+              type="checkbox"
+              checked={monitored}
+              disabled={pending !== null}
+              onChange={(event) =>
+                run("set_session_monitoring", {
+                  targetId: target.id,
+                  enabled: event.target.checked,
+                  wholeTerminal: false,
+                })
+              }
+            />
+          </label>
+          {target.terminalId && (
+            <label className="monitor-setting">
+              <span>
+                Monitor this terminal
+                <small>Applies to all tabs, including new ones.</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={terminalIncluded && !terminalMixed}
+                ref={(input) => {
+                  if (input) input.indeterminate = terminalMixed;
+                }}
+                disabled={pending !== null}
+                onChange={(event) =>
+                  run("set_session_monitoring", {
+                    targetId: target.id,
+                    enabled: event.target.checked,
+                    wholeTerminal: true,
+                  })
+                }
+              />
+            </label>
+          )}
+          <p className="monitor-help">
+            {snapshot.monitoring
+              ? "Monitoring is on for checked sessions."
+              : "Monitoring is paused. Your selection is saved."}{" "}
+            Recovery waits for all working sessions before changing the VPN.
+          </p>
+        </section>
         <section className="inspector-section">
           <h3>Project</h3>
           <div className="project-location">
@@ -312,6 +398,7 @@ function SessionInspector({
           className="primary-button full-width"
           disabled={
             !canRecover ||
+            !monitored ||
             pending !== null ||
             (target.viaPlugin && !target.clientId) ||
             (target.source === "orca" && !target.clientId)
@@ -326,8 +413,9 @@ function SessionInspector({
           Recover session
         </button>
         <p>
-          A new route is verified before continuing. Recovery waits for other
-          responding sessions.
+          {monitored
+            ? "A new route is verified before continuing. Recovery waits for other responding sessions."
+            : "Enable monitoring for this session to recover it."}
         </p>
       </div>
     </aside>
@@ -814,6 +902,20 @@ function App() {
       setSnapshot((current) => {
         if (command === "set_monitoring")
           return { ...current, monitoring: Boolean(args?.enabled) };
+        if (command === "set_session_monitoring") {
+          const target = [
+            ...current.orcaSessions,
+            ...current.otherSessions,
+          ].find((item) => item.id === args?.targetId);
+          return target
+            ? changeMonitoring(
+                current,
+                target,
+                Boolean(args?.enabled),
+                Boolean(args?.wholeTerminal),
+              )
+            : current;
+        }
         if (command === "set_preferred_server")
           return {
             ...current,
@@ -945,6 +1047,15 @@ function App() {
             key={target.id}
             target={target}
             selected={target.id === selectedId}
+            monitored={isMonitored(snapshot, target)}
+            monitoringDisabled={!controlsAvailable || pending !== null}
+            onMonitoringChange={(enabled) =>
+              run("set_session_monitoring", {
+                targetId: target.id,
+                enabled,
+                wholeTerminal: false,
+              })
+            }
             onSelect={() => selectSession(target.id)}
           />
         ))}
@@ -968,7 +1079,7 @@ function App() {
       <aside className="sidebar" aria-label="Main navigation">
         <div className="app-identity">
           <span className="app-mark">
-            <Route size={22} strokeWidth={1.65} />
+            <img src={appIcon} alt="" width={36} height={36} />
           </span>
           <span>
             <strong>Recovery</strong>
@@ -1224,8 +1335,11 @@ function App() {
                 ))}
               </div>
               <span className="view-count">
-                {shownSessions.length}{" "}
-                {shownSessions.length === 1 ? "session" : "sessions"}
+                {
+                  scopedSessions.filter((item) => isMonitored(snapshot, item))
+                    .length
+                }{" "}
+                of {scopedSessions.length} monitored
               </span>
             </div>
             <div className="workspace-body">
