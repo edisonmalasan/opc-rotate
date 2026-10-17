@@ -21,6 +21,7 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 | SoftEther profile lifecycle | `src-tauri/src/softether.rs` |
 | Background CLI execution and Windows console suppression | `src-tauri/src/process.rs` |
 | UI data contracts | `src/types.ts`, `src-tauri/src/models.rs` |
+| Monitoring selection and terminal inheritance | `src/monitoring.ts`, `Settings` in `src-tauri/src/models.rs`, queue/commands in `src-tauri/src/lib.rs` |
 | Product intent | `PRODUCT.md`, `docs/ROADMAP.md` |
 
 ## Stack and commands
@@ -49,6 +50,7 @@ For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty
 - Require a connected SoftEther account and a changed public IPv4 address before continuing. Bound relay attempts and avoid duplicate prompt submissions after uncertain receipts.
 - Use the shared service for API fallback. A live CLI plugin can report and control its own connected private service through the SDK; do not discover arbitrary private endpoints or copy their credentials.
 - UI session lists represent live work, not historical shared-service records. Preserve an already detected rate-limit incident long enough to recover it.
+- Persist session and terminal monitoring choices. Unchecked sessions remain visible but cannot queue or receive recovery. Terminal rules cover new tabs, with individual session overrides; preserve known terminal ownership through API fallback. Keep busy-work protection for every live session, including unchecked ones, because VPN routing is machine-wide. Pausing the master switch clears queued continuations.
 - Live client leases report their tab strip and connected service PID. Saved global TUI tabs and session timestamps are not proof of a live client. Deduplicate ownership by session ID, never by the whole project directory. Show sessions directly under folder-marked project headings for both sources; omit redundant terminal heading/count rows. Keep terminal identity for exact routing. Selection is independent of Idle/Working status. Closed incidents stay visible without a delivery route until reopened.
 - Address continuation by exact session ID through the live plugin request/receipt channel. Do not type a recovery prompt into an Orca terminal, since its selected tab can change. Persist the incident guard before delivery, claim each request once, and never retry ambiguous receipts automatically. Unknown execution status blocks VPN changes.
 - The app installs only its own `opc-rotate-presence/tui.js` under OpenCode's global plugin directory; it does not rewrite OpenCode configuration or other plugins. Keep presence records free of credentials and prompt text.

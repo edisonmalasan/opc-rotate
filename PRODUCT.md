@@ -26,9 +26,11 @@ The app runs beside existing Orca and OpenCode sessions. SoftEther VPN Client an
 
 - Separate Orca and outside OpenCode session lists, with open session tabs directly beneath folder-marked project headings. Omit redundant terminal headings and counts. Use live client presence rather than saved history. Show Idle, Working, Needs recovery, or unavailable status independently of which tab is selected.
 - Show VPN connection state, ranked public relays, manual list refresh, monitoring switch, recovery history, and editable continuation prompts.
+- Choose monitored sessions with row checkboxes or whole terminals in the inspector. Save selections, apply terminal choices to new tabs, and support individual overrides. Unchecked work stays visible and cannot trigger recovery or receive prompts. Busy work in any session still delays VPN changes.
 - Use only app-created SoftEther connection profiles; do not alter unrelated profiles.
 - Recover exact OpenCode sessions through their live CLI plugin's connected SDK, including connected private services. Keep the shared local service as a fallback for responding sessions. Arbitrary private-server connection setup remains outside this release.
 - Stop after bounded connection and rate-limit retries.
+- Recognize the specific OpenCode free-tier client-gate provider error as a recovery trigger for monitored sessions, with the same bounded retry and verified-IP rules.
 
 ## Evidence on Hand
 
@@ -40,3 +42,7 @@ The user supplied screenshots of an OpenCode rate-limit error, the VPN Gate rela
 - Never send a duplicate continuation prompt after an ambiguous submission.
 - Prefer a verified new public IP before resuming work.
 - Preserve existing agent sessions and unrelated VPN profiles.
+
+## Visual Direction
+
+Use the existing lime-green recovery icon with dark forest surfaces, green selection states, and lime action/focus accents. Keep amber for errors and rate limits. Preserve the compact desktop layout, readable type, project folder headings, and restrained motion.
