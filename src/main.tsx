@@ -3,330 +3,1432 @@ import { createRoot } from "react-dom/client";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
-  Activity, ArrowUpRight, ChevronDown, CircleAlert, Clock3, Command,
-  FolderClosed, Globe2, HardDrive, ListRestart, LoaderCircle, LockKeyhole,
-  Monitor, Pause, Play, Radio, RefreshCw, RotateCcw, Save, Server,
-  Settings2, ShieldCheck, Terminal, Wifi, WifiOff, X
+  Activity,
+  ArrowDown,
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  Command,
+  Folder,
+  Globe2,
+  LoaderCircle,
+  PanelLeft,
+  Radio,
+  RefreshCw,
+  RotateCcw,
+  Route,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Terminal,
+  X,
 } from "lucide-react";
+import {
+  EMPTY_SNAPSHOT,
+  type SessionTarget,
+  type Snapshot,
+  type VpnServer,
+} from "./types";
 import "./styles.css";
 
-type VpnServer = {
-  id: string; host: string; ip: string; port: number; country: string;
-  pingMs: number; speedMbps: number; sessions: number; score: number;
-};
+type View = "sessions" | "relays" | "activity";
+type SessionFilter = "all" | "limited" | "busy";
+type PromptEditor = { target: SessionTarget | null; instant: boolean };
+type RunCommand = (
+  command: string,
+  args?: Record<string, unknown>,
+) => Promise<string | null>;
 
-type SessionTarget = {
-  id: string; source: "orca" | "other"; title: string; project: string;
-  state: string; lastError: string | null; errorKey: string | null;
-  promptOverride: string | null; updatedAt: number;
-};
-
-type HistoryEntry = { at: number; level: string; message: string };
-
-type Snapshot = {
-  monitoring: boolean; phase: string; vpnStatus: string; publicIp: string | null;
-  connectedServer: VpnServer | null; servers: VpnServer[]; refreshedAt: number | null;
-  orcaSessions: SessionTarget[]; otherSessions: SessionTarget[]; history: HistoryEntry[];
-  globalPrompt: string; preferredServer: string | null; lastError: string | null;
-};
-
-const empty: Snapshot = {
-  monitoring: false, phase: "loading", vpnStatus: "checking", publicIp: null,
-  connectedServer: null, servers: [], refreshedAt: null, orcaSessions: [],
-  otherSessions: [], history: [], globalPrompt: "", preferredServer: null, lastError: null
-};
-
-function timeAgo(timestamp: number | null) {
-  if (!timestamp) return "Never";
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
+function timeAgo(at: number | null) {
+  if (!at) return "Not yet";
+  const seconds = Math.max(0, Math.floor((Date.now() - at) / 1000));
+  if (seconds < 60) return "Just now";
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
-
-function shortPath(path: string) {
-  if (!path) return "Unknown project";
-  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
-  return parts.length > 2 ? `${parts.slice(-2).join(" / ")}` : parts.join(" / ");
+  return new Date(at).toLocaleDateString();
 }
 
 function projectName(path: string) {
-  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
-  return parts.at(-1) || "Unknown project";
-}
-
-function statusLabel(state: string) {
-  if (state === "rate-limited") return "Rate limited";
-  if (state === "busy") return "Working";
-  return "Ready";
-}
-
-function SessionRow({ target, onRecover, onPrompt, busy, showProject = true }: {
-  target: SessionTarget;
-  onRecover: (id: string) => void;
-  onPrompt: (target: SessionTarget) => void;
-  busy: boolean;
-  showProject?: boolean;
-}) {
-  const isLimited = target.state === "rate-limited";
   return (
-    <div className={`session-row ${isLimited ? "session-alert" : ""}`}>
-      <div className="session-mark"><Terminal size={18} strokeWidth={1.8} /></div>
-      <div className="session-copy">
-        <div className="session-title-line">
-          <strong title={target.title}>{target.title}</strong>
-          <span className={`state-pill ${isLimited ? "bad" : target.state === "busy" ? "live" : ""}`}>
-            <span className="state-dot" />{statusLabel(target.state)}
-          </span>
-        </div>
-        <div className="session-subline">
-          {showProject && <><span title={target.project}>{shortPath(target.project)}</span><span className="sub-separator" /></>}
-          <span>{timeAgo(target.updatedAt)}</span>
-          {target.promptOverride && <span className="custom-prompt">Custom prompt</span>}
-        </div>
-        {isLimited && target.lastError && <p className="session-error">{target.lastError}</p>}
-      </div>
-      <div className="session-actions">
-        <button className="icon-button" title="Edit continuation prompt" aria-label={`Edit prompt for ${target.title}`} onClick={() => onPrompt(target)}><Settings2 size={17} /></button>
-        <button className="small-button" disabled={busy} onClick={() => onRecover(target.id)}><RotateCcw size={14} /> Recover</button>
-      </div>
+    path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ||
+    "Unknown project"
+  );
+}
+
+function sessionTitle(title: string) {
+  return title.replace(/^OC\s*\|\s*/i, "");
+}
+function stateLabel(state: string) {
+  return state === "rate-limited"
+    ? "Needs recovery"
+    : state === "busy"
+      ? "Working"
+      : "Ready";
+}
+function countryName(country: string) {
+  return country === "Korea Republic of" ? "South Korea" : country;
+}
+function countryCode(country: string) {
+  return (
+    (
+      {
+        Japan: "JP",
+        "Korea Republic of": "KR",
+        Singapore: "SG",
+        "United States": "US",
+        Taiwan: "TW",
+        Germany: "DE",
+        Thailand: "TH",
+        Vietnam: "VN",
+      } as Record<string, string>
+    )[country] || country.slice(0, 2).toUpperCase()
+  );
+}
+function lineSpeed(speed: number) {
+  return speed >= 1000
+    ? `${(speed / 1000).toFixed(2)} Gbps`
+    : `${Math.round(speed)} Mbps`;
+}
+
+function StateLabel({ state }: { state: string }) {
+  return (
+    <span className={`session-state ${state}`}>
+      <i />
+      {stateLabel(state)}
+    </span>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="empty-state">
+      <span className="empty-symbol">{icon}</span>
+      <h2>{title}</h2>
+      <p>{children}</p>
     </div>
   );
 }
 
-function OrcaProjectGroup({ project, targets, onRecover, onPrompt, busy }: {
-  project: string; targets: SessionTarget[];
-  onRecover: (id: string) => void; onPrompt: (target: SessionTarget) => void; busy: boolean;
+function SessionItem({
+  target,
+  selected,
+  onSelect,
+}: {
+  target: SessionTarget;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const [open, setOpen] = useState(true);
-  const limited = targets.filter(target => target.state === "rate-limited").length;
-  return <section className="orca-project">
-    <button className="project-heading" onClick={() => setOpen(value => !value)} aria-expanded={open} aria-label={`${projectName(project)} project, ${targets.length} ${targets.length === 1 ? "terminal" : "terminals"}`}>
-      <span className="project-glyph"><FolderClosed size={17} strokeWidth={1.8} /></span>
-      <span className="project-copy"><strong>{projectName(project)}</strong><small title={project}>{project || "Project path unavailable"}</small></span>
-      <span className="project-count">{targets.length} {targets.length === 1 ? "terminal" : "terminals"}</span>
-      {limited > 0 && <span className="section-warning">{limited} need recovery</span>}
-      <ChevronDown size={16} className={`disclosure ${open ? "open" : ""}`} />
+  return (
+    <button
+      className={`session-item ${selected ? "selected" : ""}`}
+      data-session-id={target.id}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      <span className={`session-symbol ${target.state}`}>
+        <Terminal size={18} strokeWidth={1.6} />
+      </span>
+      <span className="session-item-copy">
+        <strong>{sessionTitle(target.title)}</strong>
+        <small>
+          {target.source === "orca" ? "Orca terminal" : "OpenCode session"}
+          {target.promptOverride && (
+            <>
+              <span>·</span>Custom prompt
+            </>
+          )}
+        </small>
+      </span>
+      <StateLabel state={target.state} />
+      <time dateTime={new Date(target.updatedAt).toISOString()}>
+        {timeAgo(target.updatedAt)}
+      </time>
+      <ChevronRight className="row-chevron" size={15} />
     </button>
-    <div className={`reveal ${open ? "open" : ""}`} aria-hidden={!open} inert={!open}>
-      <div className="reveal-inner">
-        <div className="project-terminals">
-          {targets.map(target => <SessionRow key={target.id} target={target} onRecover={onRecover} onPrompt={onPrompt} busy={busy} showProject={false} />)}
-        </div>
-      </div>
-    </div>
-  </section>;
+  );
 }
 
-function SessionSection({ title, subtitle, icon, targets, onRecover, onPrompt, busy, groupByProject = false }: {
-  title: string; subtitle: string; icon: React.ReactNode; targets: SessionTarget[];
-  onRecover: (id: string) => void; onPrompt: (target: SessionTarget) => void; busy: boolean;
-  groupByProject?: boolean;
+function SessionInspector({
+  target,
+  snapshot,
+  canRecover,
+  pending,
+  onClose,
+  onEdit,
+  run,
+}: {
+  target: SessionTarget | null;
+  snapshot: Snapshot;
+  canRecover: boolean;
+  pending: string | null;
+  onClose: () => void;
+  onEdit: (target: SessionTarget, instant: boolean) => void;
+  run: RunCommand;
 }) {
-  const [open, setOpen] = useState(true);
-  const limited = targets.filter(target => target.state === "rate-limited").length;
-  const projects = useMemo(() => {
-    const groups = new Map<string, SessionTarget[]>();
-    for (const target of targets) {
-      const project = target.project || "";
-      groups.set(project, [...(groups.get(project) || []), target]);
-    }
-    return [...groups.entries()].sort(([a], [b]) => projectName(a).localeCompare(projectName(b)));
-  }, [targets]);
+  if (!target)
+    return (
+      <aside className="inspector empty-inspector">
+        <EmptyState
+          icon={<PanelLeft size={27} strokeWidth={1.3} />}
+          title="Session details"
+        >
+          Select a session to review its status and continuation prompt.
+        </EmptyState>
+      </aside>
+    );
   return (
-    <section className="panel session-panel">
-      <button className="section-heading collapsible" onClick={() => setOpen(value => !value)} aria-expanded={open}>
-        <div className="heading-icon">{icon}</div>
-        <div className="heading-text"><h2>{title}</h2><p>{subtitle}</p></div>
-        <span className="section-count">{targets.length} {groupByProject ? targets.length === 1 ? "terminal" : "terminals" : targets.length === 1 ? "session" : "sessions"}</span>
-        {limited > 0 && <span className="section-warning">{limited} need recovery</span>}
-        <ChevronDown size={17} className={`disclosure ${open ? "open" : ""}`} />
-      </button>
-      <div className={`reveal ${open ? "open" : ""}`} aria-hidden={!open} inert={!open}>
-        <div className="reveal-inner">
-          <div className={groupByProject ? "project-list" : "session-list"}>
-            {targets.length ? (groupByProject ?
-              projects.map(([project, group]) => <OrcaProjectGroup key={project} project={project} targets={group} onRecover={onRecover} onPrompt={onPrompt} busy={busy} />) :
-              targets.map(target => <SessionRow key={target.id} target={target} onRecover={onRecover} onPrompt={onPrompt} busy={busy} />)) :
-              <div className="empty-state"><span className="empty-icon"><Terminal size={20} /></span><div><strong>{groupByProject ? "No active Orca terminals" : "No active OpenCode sessions"}</strong><span>{groupByProject ? "Terminals appear here when an Orca project is active." : "Only active shared-service work appears here."}</span></div></div>}
+    <aside className="inspector" aria-label="Selected session details">
+      <div className="inspector-toolbar">
+        <span>Session details</span>
+        <button
+          className="icon-button"
+          aria-label="Close session details"
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div className="inspector-scroll">
+        <h2 className="inspector-title">{sessionTitle(target.title)}</h2>
+        <div className="inspector-session-meta">
+          <StateLabel state={target.state} />
+          <span>{target.source === "orca" ? "Orca terminal" : "OpenCode"}</span>
+        </div>
+        <section className="inspector-section">
+          <h3>Project</h3>
+          <div className="project-location">
+            <Folder size={15} />
+            <strong>{projectName(target.project)}</strong>
+          </div>
+          <p className="path-text">
+            {target.project || "Project path unavailable"}
+          </p>
+        </section>
+        {target.lastError && (
+          <section className="inspector-section">
+            <h3>Latest error</h3>
+            <p className="error-detail">
+              <CircleAlert size={15} />
+              <span>{target.lastError}</span>
+            </p>
+          </section>
+        )}
+        <section className="inspector-section">
+          <div className="section-label">
+            <h3>Continuation prompt</h3>
+            <button
+              className="text-button"
+              onClick={(event) => onEdit(target, event.detail === 0)}
+            >
+              Edit
+            </button>
+          </div>
+          <p className="prompt-preview">
+            {target.promptOverride || snapshot.globalPrompt}
+          </p>
+          <span className="detail-caption">
+            {target.promptOverride
+              ? "Custom for this session"
+              : "Using the default prompt"}
+          </span>
+        </section>
+      </div>
+      <div className="inspector-bottom">
+        <button
+          className="primary-button full-width"
+          disabled={!canRecover || pending !== null}
+          onClick={() => run("recover_now", { targetId: target.id })}
+        >
+          {pending === "recover_now" ? (
+            <LoaderCircle className="spin" size={16} />
+          ) : (
+            <RotateCcw size={16} />
+          )}
+          Recover session
+        </button>
+        <p>
+          A new route is verified before continuing. Recovery waits for other
+          responding sessions.
+        </p>
+      </div>
+    </aside>
+  );
+}
+
+function RelayInspector({
+  server,
+  snapshot,
+  pending,
+  available,
+  run,
+}: {
+  server: VpnServer | null;
+  snapshot: Snapshot;
+  pending: string | null;
+  available: boolean;
+  run: RunCommand;
+}) {
+  if (!server)
+    return (
+      <aside className="inspector empty-inspector">
+        <EmptyState
+          icon={<Globe2 size={27} strokeWidth={1.3} />}
+          title="Relay details"
+        >
+          Refresh the list to find available VPN Gate servers.
+        </EmptyState>
+      </aside>
+    );
+  const preferred = snapshot.preferredServer === server.id;
+  const connected = snapshot.connectedServer?.id === server.id;
+  return (
+    <aside className="inspector" aria-label="Selected relay details">
+      <div className="inspector-toolbar">
+        <span>Relay details</span>
+        {connected && (
+          <span className="connected-note">
+            <i />
+            Connected
+          </span>
+        )}
+      </div>
+      <div className="inspector-scroll">
+        <span className="relay-country-large">
+          {countryCode(server.country)}
+        </span>
+        <h2 className="inspector-title">{countryName(server.country)}</h2>
+        <p className="relay-host">{server.host}</p>
+        <div className="relay-measures">
+          <div>
+            <strong>
+              {server.pingMs}
+              <small> ms</small>
+            </strong>
+            <span>Ping</span>
+          </div>
+          <div>
+            <strong>
+              {lineSpeed(server.speedMbps).split(" ")[0]}
+              <small> {lineSpeed(server.speedMbps).split(" ")[1]}</small>
+            </strong>
+            <span>Line speed</span>
           </div>
         </div>
+        <dl className="detail-list">
+          <div>
+            <dt>IP address</dt>
+            <dd className="mono">{server.ip}</dd>
+          </div>
+          <div>
+            <dt>TCP port</dt>
+            <dd>{server.port}</dd>
+          </div>
+          <div>
+            <dt>VPN sessions</dt>
+            <dd>{server.sessions}</dd>
+          </div>
+        </dl>
+        <section className="inspector-section">
+          <h3>Next recovery</h3>
+          <p className="inspector-description">
+            {preferred
+              ? "This relay will be tried first."
+              : "Recovery picks a relay by ping and line speed. You can prioritize this one."}{" "}
+            Failed connections are skipped automatically.
+          </p>
+        </section>
       </div>
-    </section>
+      <div className="inspector-bottom">
+        <button
+          className={`${preferred ? "secondary-button" : "primary-button"} full-width`}
+          disabled={!available || pending !== null}
+          onClick={() =>
+            run("set_preferred_server", {
+              serverId: preferred ? null : server.id,
+            })
+          }
+        >
+          {preferred ? <Check size={16} /> : <ArrowUpRight size={16} />}
+          {preferred ? "Use automatic selection" : "Prioritize this relay"}
+        </button>
+        <p>Advertised ping and speed are estimates from VPN Gate.</p>
+      </div>
+    </aside>
   );
 }
 
-function PromptDialog({ target, current, global, onClose, onSave }: {
-  target: SessionTarget | null; current: string; global: string;
-  onClose: () => void; onSave: (value: string | null) => void;
+function PromptDialog({
+  editor,
+  globalPrompt,
+  onClose,
+  run,
+}: {
+  editor: PromptEditor;
+  globalPrompt: string;
+  onClose: () => void;
+  run: RunCommand;
 }) {
-  const [value, setValue] = useState(current);
-  const [closing, setClosing] = useState(false);
-  const closeTimer = useRef<number | null>(null);
-  useEffect(() => setValue(current), [current, target]);
-  useEffect(() => () => { if (closeTimer.current !== null) window.clearTimeout(closeTimer.current); }, []);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closing = useRef(false);
+  const [value, setValue] = useState(
+    editor.target ? (editor.target.promptOverride ?? "") : globalPrompt,
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function dismiss() {
-    if (closing) return;
-    setClosing(true);
-    closeTimer.current = window.setTimeout(onClose, 160);
+  useEffect(() => {
+    const dialog = dialogRef.current!;
+    const origin = document.activeElement as HTMLElement | null;
+    dialog.showModal();
+    dialog.querySelector("textarea")?.focus();
+    if (
+      !editor.instant &&
+      !matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      dialog.animate(
+        [
+          { opacity: 0, transform: "translateY(8px) scale(.98)" },
+          { opacity: 1, transform: "translateY(0) scale(1)" },
+        ],
+        { duration: 190, easing: "cubic-bezier(.23,1,.32,1)" },
+      );
+    }
+    return () => {
+      dialog.getAnimations().forEach((animation) => animation.cancel());
+      dialog.close();
+      origin?.focus();
+    };
+  }, [editor.instant]);
+
+  function dismiss(instant = false) {
+    if (closing.current || saving) return;
+    closing.current = true;
+    const dialog = dialogRef.current;
+    if (
+      instant ||
+      editor.instant ||
+      matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !dialog
+    ) {
+      onClose();
+      return;
+    }
+    dialog
+      .animate(
+        [
+          { opacity: 1, transform: "translateY(0) scale(1)" },
+          { opacity: 0, transform: "translateY(6px) scale(.985)" },
+        ],
+        {
+          duration: 120,
+          easing: "cubic-bezier(.23,1,.32,1)",
+          fill: "forwards",
+        },
+      )
+      .finished.then(onClose)
+      .catch(() => {});
+  }
+
+  async function save(useDefault = false) {
+    setSaving(true);
+    const message = editor.target
+      ? await run("set_prompt_override", {
+          targetId: editor.target.id,
+          prompt: useDefault ? null : value.trim() || null,
+        })
+      : await run("set_global_prompt", { prompt: value.trim() });
+    setSaving(false);
+    if (message) setError(message);
+    else onClose();
   }
 
   return (
-    <div className={`dialog-backdrop ${closing ? "closing" : ""}`} onMouseDown={dismiss} onKeyDown={event => { if (event.key === "Escape") dismiss(); }}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label="Edit continuation prompt" onMouseDown={event => event.stopPropagation()}>
-        <div className="dialog-top"><div><span className="eyebrow">RECOVERY MESSAGE</span><h2>{target ? "Session prompt" : "Default prompt"}</h2></div><button className="icon-button" onClick={dismiss} aria-label="Close"><X size={18} /></button></div>
-        <p className="dialog-intro">{target ? `Used when ${target.title} is ready to continue. Leave it empty to use the default prompt.` : "Sent to affected sessions after a verified VPN connection."}</p>
-        <textarea value={value} onChange={event => setValue(event.target.value)} rows={5} autoFocus placeholder={target ? global : "Enter a continuation prompt"} />
-        <div className="dialog-footer">
-          {target && <button className="text-button" onClick={() => onSave(null)}>Use default</button>}
-          <div className="dialog-spacer" />
-          <button className="secondary-button" onClick={dismiss}>Cancel</button>
-          <button className="primary-button" disabled={!target && !value.trim()} onClick={() => onSave(value.trim() || null)}><Save size={15} /> Save prompt</button>
+    <dialog
+      className="prompt-dialog"
+      ref={dialogRef}
+      aria-labelledby="prompt-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        dismiss(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const controls = [
+          ...event.currentTarget.querySelectorAll<HTMLElement>(
+            "button:not(:disabled), textarea:not(:disabled)",
+          ),
+        ];
+        const first = controls[0];
+        const last = controls.at(-1);
+        if (!first || !last) {
+          event.preventDefault();
+        } else if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < bounds.left ||
+          event.clientX > bounds.right ||
+          event.clientY < bounds.top ||
+          event.clientY > bounds.bottom
+        )
+          dismiss();
+      }}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!saving) void save();
+        }}
+      >
+        <div className="dialog-header">
+          <span className="dialog-symbol">
+            <Settings2 size={21} />
+          </span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close prompt editor"
+            disabled={saving}
+            onClick={(event) => dismiss(event.detail === 0)}
+          >
+            <X size={17} />
+          </button>
         </div>
-      </div>
-    </div>
+        <h2 id="prompt-title">
+          {editor.target ? "Session prompt" : "Continuation prompt"}
+        </h2>
+        <p>
+          {editor.target
+            ? `Customize the message for “${sessionTitle(editor.target.title)}”.`
+            : "Sent once to each affected session after the new connection is verified."}
+        </p>
+        <label htmlFor="continuation-prompt">
+          {editor.target ? "Custom prompt" : "Default prompt"}
+        </label>
+        <textarea
+          id="continuation-prompt"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={
+            editor.target ? globalPrompt : "Enter a continuation prompt"
+          }
+          rows={6}
+          disabled={saving}
+          autoFocus
+        />
+        {editor.target && <small>Leave blank to use the default prompt.</small>}
+        {error && (
+          <p className="dialog-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dialog-actions">
+          {editor.target && (
+            <button
+              type="button"
+              className="text-button"
+              disabled={saving}
+              onClick={() => save(true)}
+            >
+              Use default
+            </button>
+          )}
+          <span />
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={saving}
+            onClick={(event) => dismiss(event.detail === 0)}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={saving || (!editor.target && !value.trim())}
+          >
+            {saving && <LoaderCircle className="spin" size={14} />}Save prompt
+          </button>
+        </div>
+      </form>
+    </dialog>
   );
 }
 
 function App() {
-  const [snapshot, setSnapshot] = useState<Snapshot>(empty);
-  const [loaded, setLoaded] = useState(false);
-  const [action, setAction] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [promptTarget, setPromptTarget] = useState<SessionTarget | null | "global">(null);
-  const [showAllServers, setShowAllServers] = useState(false);
   const desktop = isTauri();
+  const preview =
+    import.meta.env.DEV &&
+    !desktop &&
+    new URLSearchParams(location.search).get("preview") === "1";
+  const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY_SNAPSHOT);
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState<View>("sessions");
+  const [scope, setScope] = useState("all");
+  const [filter, setFilter] = useState<SessionFilter>("all");
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedRelayId, setSelectedRelayId] = useState<string | null>(null);
+  const [relaySort, setRelaySort] = useState("recommended");
+  const [activityFilter, setActivityFilter] = useState("all");
+  const [editor, setEditor] = useState<PromptEditor | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const initialSelection = useRef(false);
 
   useEffect(() => {
-    if (!desktop) return;
     let disposed = false;
-    const unlisten = listen<Snapshot>("snapshot", event => { if (!disposed) { setSnapshot(event.payload); setLoaded(true); } })
-      .catch(error => { if (!disposed) setNotice(String(error)); return () => {}; });
-    invoke<Snapshot>("get_snapshot")
-      .then(value => { if (!disposed) { setSnapshot(value); setLoaded(true); } })
-      .catch(error => { if (!disposed) setNotice(String(error)); });
-    return () => { disposed = true; unlisten.then(fn => fn()).catch(() => {}); };
-  }, [desktop]);
-
-  async function call(command: string, args?: Record<string, unknown>) {
+    if (preview) {
+      import("./dev-preview").then((module) => {
+        if (disposed) return;
+        const data = module.createPreviewSnapshot();
+        if (new URLSearchParams(location.search).get("empty") === "1") {
+          data.orcaSessions = [];
+          data.otherSessions = [];
+          data.servers = [];
+          data.history = [];
+          data.connectedServer = null;
+          data.publicIp = null;
+          data.vpnStatus = "disconnected";
+        }
+        setSnapshot(data);
+        setLoaded(true);
+      });
+      return () => {
+        disposed = true;
+      };
+    }
     if (!desktop) return;
-    setAction(command);
+    let eventReceived = false;
+    const unlisten = listen<Snapshot>("snapshot", (event) => {
+      if (!disposed) {
+        eventReceived = true;
+        setSnapshot(event.payload);
+        setLoaded(true);
+      }
+    }).catch((error) => {
+      if (!disposed) setNotice(String(error));
+      return () => {};
+    });
+    invoke<Snapshot>("get_snapshot")
+      .then((data) => {
+        if (!disposed && !eventReceived) {
+          setSnapshot(data);
+          setLoaded(true);
+        }
+      })
+      .catch((error) => {
+        if (!disposed) setNotice(String(error));
+      });
+    return () => {
+      disposed = true;
+      void unlisten.then((stop) => stop());
+    };
+  }, [desktop, preview]);
+
+  const sessions = useMemo(
+    () => [...snapshot.orcaSessions, ...snapshot.otherSessions],
+    [snapshot.orcaSessions, snapshot.otherSessions],
+  );
+  const projects = useMemo(() => {
+    const groups = new Map<string, SessionTarget[]>();
+    for (const session of snapshot.orcaSessions)
+      groups.set(session.project, [
+        ...(groups.get(session.project) ?? []),
+        session,
+      ]);
+    return [...groups.entries()].sort(([a], [b]) =>
+      projectName(a).localeCompare(projectName(b)),
+    );
+  }, [snapshot.orcaSessions]);
+  useEffect(() => {
+    if (!initialSelection.current && sessions.length) {
+      setSelectedId(
+        (
+          sessions.find((session) => session.state === "rate-limited") ??
+          sessions[0]
+        ).id,
+      );
+      initialSelection.current = true;
+    } else if (
+      selectedId &&
+      !sessions.some((session) => session.id === selectedId)
+    )
+      setSelectedId(null);
+  }, [sessions, selectedId]);
+
+  const recovering =
+    snapshot.phase.startsWith("connecting") ||
+    snapshot.phase.startsWith("waiting") ||
+    snapshot.phase === "resuming sessions";
+  const scopedSessions =
+    scope === "other"
+      ? snapshot.otherSessions
+      : scope.startsWith("project:")
+        ? snapshot.orcaSessions.filter(
+            (session) => session.project === scope.slice(8),
+          )
+        : sessions;
+  const limited = scopedSessions.filter(
+    (session) => session.state === "rate-limited",
+  ).length;
+  const shownSessions = scopedSessions.filter(
+    (session) =>
+      (filter === "all" ||
+        (filter === "limited"
+          ? session.state === "rate-limited"
+          : session.state === "busy")) &&
+      `${session.title} ${session.project}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+  );
+  const selected =
+    shownSessions.find((session) => session.id === selectedId) ?? null;
+  const shownGroups = projects
+    .map(([project]) => ({
+      project,
+      targets: shownSessions.filter(
+        (session) => session.source === "orca" && session.project === project,
+      ),
+    }))
+    .filter((group) => group.targets.length);
+  const shownOther = shownSessions.filter(
+    (session) => session.source === "other",
+  );
+  const relays = useMemo(() => {
+    const result = snapshot.servers.filter((server) =>
+      `${countryName(server.country)} ${server.host} ${server.ip}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+    );
+    if (relaySort === "ping") result.sort((a, b) => a.pingMs - b.pingMs);
+    if (relaySort === "speed") result.sort((a, b) => b.speedMbps - a.speedMbps);
+    return result;
+  }, [snapshot.servers, search, relaySort]);
+  const relay =
+    relays.find((server) => server.id === selectedRelayId) ??
+    relays.find((server) => server.id === snapshot.preferredServer) ??
+    relays.find((server) => server.id === snapshot.connectedServer?.id) ??
+    relays[0] ??
+    null;
+  const events = snapshot.history.filter(
+    (event) =>
+      (activityFilter === "all" || event.level === activityFilter) &&
+      event.message.toLowerCase().includes(search.toLowerCase()),
+  );
+  const error =
+    notice ??
+    (snapshot.lastError !== dismissedError ? snapshot.lastError : null);
+  const controlsAvailable = desktop || preview;
+
+  async function run(
+    command: string,
+    args?: Record<string, unknown>,
+  ): Promise<string | null> {
+    if (inFlight.current) return "Another action is in progress.";
+    if (preview) {
+      setSnapshot((current) => {
+        if (command === "set_monitoring")
+          return { ...current, monitoring: Boolean(args?.enabled) };
+        if (command === "set_preferred_server")
+          return {
+            ...current,
+            preferredServer: args?.serverId as string | null,
+          };
+        if (command === "set_global_prompt")
+          return { ...current, globalPrompt: args?.prompt as string };
+        if (command === "set_prompt_override") {
+          const update = (target: SessionTarget) =>
+            target.id === args?.targetId
+              ? { ...target, promptOverride: args?.prompt as string | null }
+              : target;
+          return {
+            ...current,
+            orcaSessions: current.orcaSessions.map(update),
+            otherSessions: current.otherSessions.map(update),
+          };
+        }
+        return current;
+      });
+      return null;
+    }
+    if (!desktop) return "Open the desktop app to use this control.";
+    inFlight.current = true;
+    setPending(command);
     setNotice(null);
+    setDismissedError(null);
     try {
-      const result = await invoke<Snapshot>(command, args);
-      setSnapshot(result);
-    } catch (error) {
-      setNotice(String(error));
+      setSnapshot(await invoke<Snapshot>(command, args));
+      return null;
+    } catch (failure) {
+      const message = String(failure);
+      setNotice(message);
+      return message;
     } finally {
-      setAction(null);
+      inFlight.current = false;
+      setPending(null);
     }
   }
 
-  const sessions = [...snapshot.orcaSessions, ...snapshot.otherSessions];
-  const limitedCount = sessions.filter(target => target.state === "rate-limited").length;
-  const busy = snapshot.phase.startsWith("connecting") || snapshot.phase === "resuming sessions" || snapshot.phase.startsWith("waiting");
-  const visibleServers = showAllServers ? snapshot.servers.slice(0, 30) : snapshot.servers.slice(0, 7);
-  const current = snapshot.connectedServer;
-  const recoveryLabel = busy ? snapshot.phase : snapshot.monitoring ? "Watching for rate limits" : "Monitoring is paused";
-  const promptDialogTarget = promptTarget && promptTarget !== "global" ? promptTarget : null;
-  const promptCurrent = promptTarget === "global" ? snapshot.globalPrompt : promptDialogTarget?.promptOverride ?? "";
-  const recentHistory = useMemo(() => snapshot.history.slice(0, 8), [snapshot.history]);
+  function navigate(next: View, nextScope = "all") {
+    setView(next);
+    setScope(nextScope);
+    setSearch("");
+    setFilter("all");
+    if (nextScope !== "all") setSelectedId(null);
+  }
+
+  function selectSession(id: string) {
+    setSelectedId(id);
+    if (matchMedia("(max-width: 760px)").matches) {
+      requestAnimationFrame(() =>
+        document
+          .querySelector(".inspector")
+          ?.scrollIntoView({ block: "start", behavior: "auto" }),
+      );
+    }
+  }
+
+  function moveSession(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    const buttons = [
+      ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        ".session-item",
+      ),
+    ];
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? buttons.length - 1
+          : Math.max(
+              0,
+              Math.min(
+                buttons.length - 1,
+                index + (event.key === "ArrowDown" ? 1 : -1),
+              ),
+            );
+    buttons[nextIndex].focus();
+    const id = buttons[nextIndex].dataset.sessionId;
+    if (id) selectSession(id);
+  }
+
+  function renderGroup(
+    title: string,
+    subtitle: string,
+    targets: SessionTarget[],
+    other = false,
+  ) {
+    return (
+      <section className="session-group" key={other ? "other" : subtitle}>
+        <div className="group-heading">
+          <span className="group-title">
+            {other ? <Terminal size={14} /> : <Folder size={14} />}
+            <strong>{title}</strong>
+            <span>{targets.length}</span>
+          </span>
+          <small title={subtitle}>{other ? "Shared service" : subtitle}</small>
+        </div>
+        {targets.map((target) => (
+          <SessionItem
+            key={target.id}
+            target={target}
+            selected={target.id === selectedId}
+            onSelect={() => selectSession(target.id)}
+          />
+        ))}
+      </section>
+    );
+  }
+
+  const viewTitle =
+    view === "relays"
+      ? "VPN relays"
+      : view === "activity"
+        ? "Activity"
+        : scope === "other"
+          ? "Other OpenCode sessions"
+          : scope.startsWith("project:")
+            ? projectName(scope.slice(8))
+            : "Sessions";
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div className="topbar-inner">
-          <div className="brand">
-            <span className="brand-symbol"><ListRestart size={21} strokeWidth={2.2} /></span>
-            <span className="brand-copy"><strong>OpenCode Recovery</strong><small>Network continuity</small></span>
+      <aside className="sidebar" aria-label="Main navigation">
+        <div className="app-identity">
+          <span className="app-mark">
+            <Route size={22} strokeWidth={1.65} />
+          </span>
+          <span>
+            <strong>Recovery</strong>
+            <small>for OpenCode</small>
+          </span>
+        </div>
+        <nav className="main-nav">
+          <button
+            className={view === "sessions" && scope === "all" ? "active" : ""}
+            onClick={() => navigate("sessions")}
+            title="Sessions"
+            aria-current={
+              view === "sessions" && scope === "all" ? "page" : undefined
+            }
+          >
+            <PanelLeft size={17} />
+            <span>Sessions</span>
+            <small>{sessions.length}</small>
+          </button>
+          <button
+            className={view === "relays" ? "active" : ""}
+            onClick={() => navigate("relays")}
+            title="VPN relays"
+            aria-current={view === "relays" ? "page" : undefined}
+          >
+            <Globe2 size={17} />
+            <span>VPN relays</span>
+            <small>{snapshot.servers.length}</small>
+          </button>
+          <button
+            className={view === "activity" ? "active" : ""}
+            onClick={() => navigate("activity")}
+            title="Activity"
+            aria-current={view === "activity" ? "page" : undefined}
+          >
+            <Activity size={17} />
+            <span>Activity</span>
+            {snapshot.history.some((event) => event.level === "error") && (
+              <i className="nav-indicator" />
+            )}
+          </button>
+        </nav>
+        <div className="project-nav-scroll">
+          <div className="nav-section-label">
+            <span>Orca projects</span>
+            <Command size={12} />
           </div>
-          <div className="topbar-right">
-            <span className="local-badge"><LockKeyhole size={13} /> LOCAL DESKTOP</span>
-            <span className="top-divider" />
-            <span className="softether-name">SOFTETHER + VPN GATE</span>
+          <nav className="project-nav">
+            {projects.length ? (
+              projects.map(([project, targets]) => (
+                <button
+                  key={project}
+                  className={
+                    view === "sessions" && scope === `project:${project}`
+                      ? "active"
+                      : ""
+                  }
+                  title={project}
+                  aria-current={
+                    view === "sessions" && scope === `project:${project}`
+                      ? "page"
+                      : undefined
+                  }
+                  onClick={() => navigate("sessions", `project:${project}`)}
+                >
+                  <Folder size={15} />
+                  <span>{projectName(project)}</span>
+                  {targets.some((target) => target.state === "rate-limited") ? (
+                    <i className="attention-dot" />
+                  ) : (
+                    <small>{targets.length}</small>
+                  )}
+                </button>
+              ))
+            ) : (
+              <p className="nav-empty">Active projects appear here.</p>
+            )}
+          </nav>
+          <div className="nav-section-label second">
+            <span>OpenCode</span>
+          </div>
+          <nav className="project-nav">
+            <button
+              title="Other OpenCode sessions"
+              className={
+                view === "sessions" && scope === "other" ? "active" : ""
+              }
+              aria-current={
+                view === "sessions" && scope === "other" ? "page" : undefined
+              }
+              onClick={() => navigate("sessions", "other")}
+            >
+              <Terminal size={15} />
+              <span>Other sessions</span>
+              <small>{snapshot.otherSessions.length}</small>
+            </button>
+          </nav>
+        </div>
+        <div className="sidebar-bottom">
+          <button
+            className="prompt-settings"
+            title="Continuation prompt"
+            disabled={!controlsAvailable}
+            onClick={(event) =>
+              setEditor({ target: null, instant: event.detail === 0 })
+            }
+          >
+            <Settings2 size={16} />
+            <span>Continuation prompt</span>
+          </button>
+          <div className="sidebar-caption">
+            <ShieldCheck size={13} />
+            <span>SoftEther · VPN Gate</span>
           </div>
         </div>
-      </header>
+      </aside>
 
-      <main>
-        <div className="page-heading">
-          <div>
-            <span className="eyebrow"><span className="eyebrow-line" /> CONTROL CENTER</span>
-            <h1>Stay in the flow.</h1>
-            <p>Watch active sessions and recover them when a rate limit interrupts the work.</p>
+      <main className="workspace">
+        <header className="toolbar">
+          <div className="toolbar-title">
+            <h1>{viewTitle}</h1>
+            {preview && <span className="preview-label">Preview data</span>}
           </div>
-          <button
-            className={`monitor-toggle ${snapshot.monitoring ? "enabled" : ""}`}
-            role="switch"
-            aria-checked={snapshot.monitoring}
-            disabled={!desktop || !!action}
-            onClick={() => call("set_monitoring", { enabled: !snapshot.monitoring })}
+          <div className="toolbar-actions">
+            <label className="search-field">
+              <Search size={15} />
+              <input
+                aria-label={`Search ${view}`}
+                placeholder={`Search ${view}…`}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              {search && (
+                <button aria-label="Clear search" onClick={() => setSearch("")}>
+                  <X size={13} />
+                </button>
+              )}
+            </label>
+            <button
+              className={`monitor-control ${snapshot.monitoring ? "enabled" : ""}`}
+              role="switch"
+              aria-label="Monitoring"
+              aria-checked={snapshot.monitoring}
+              disabled={!controlsAvailable || pending !== null}
+              onClick={() =>
+                run("set_monitoring", { enabled: !snapshot.monitoring })
+              }
+            >
+              <span>Monitoring</span>
+              <span className="switch-track">
+                <span />
+              </span>
+            </button>
+          </div>
+        </header>
+
+        <div className="route-bar">
+          <span
+            className={`route-symbol ${snapshot.vpnStatus === "connected" ? "connected" : ""}`}
           >
-            <span className="toggle-track"><span /></span>
-            <span className="monitor-copy"><strong>{snapshot.monitoring ? "Monitoring on" : "Start monitoring"}</strong><small>{snapshot.monitoring ? "Watching active work" : "Paused until you start"}</small></span>
-            {snapshot.monitoring ? <Radio size={17} /> : <Play size={16} />}
+            <Globe2 size={20} strokeWidth={1.5} />
+          </span>
+          <div className="route-copy">
+            <strong>
+              <i className={`route-dot ${snapshot.vpnStatus}`} />
+              {snapshot.vpnStatus === "connected"
+                ? `Connected${snapshot.connectedServer ? ` · ${countryName(snapshot.connectedServer.country)}` : ""}`
+                : snapshot.vpnStatus === "checking"
+                  ? "Checking VPN connection"
+                  : "VPN disconnected"}
+            </strong>
+            <span>
+              {snapshot.connectedServer?.host ||
+                "Recovery chooses a relay when a session needs it."}
+            </span>
+          </div>
+          <div className="route-address">
+            <span>Public IP</span>
+            <strong className="mono">{snapshot.publicIp || "—"}</strong>
+          </div>
+          {snapshot.connectedServer && (
+            <button
+              className="quiet-button disconnect-button"
+              disabled={!desktop || recovering || pending !== null}
+              onClick={() => run("disconnect_vpn")}
+            >
+              Disconnect
+            </button>
+          )}
+          <button className="route-link" onClick={() => navigate("relays")}>
+            View relays
+            <ChevronRight size={15} />
           </button>
         </div>
-
-        {!desktop && <div className="preview-note"><Monitor size={17} /><span>Browser preview. Open the desktop app to see live VPN and session data.</span></div>}
-        {notice && <div className="notice" role="alert"><CircleAlert size={18} /><span>{notice}</span><button onClick={() => setNotice(null)} aria-label="Dismiss"><X size={16} /></button></div>}
-
-        <section className="status-card" aria-label="Current connection">
-          <div className="status-main">
-            <span className={`status-orb ${snapshot.vpnStatus === "connected" ? "connected" : ""}`}><Globe2 size={31} strokeWidth={1.55} /></span>
-            <div className="status-copy">
-              <span className="status-kicker">CURRENT ROUTE</span>
-              <h2>{current ? `${current.country} relay` : "No VPN connection"}</h2>
-              <p>{current ? `${current.host} · ${current.ip}:${current.port}` : "A verified route will appear here when recovery begins."}</p>
-            </div>
-            <span className={`connection-state ${snapshot.vpnStatus}`}><span />{snapshot.vpnStatus}</span>
+        {!desktop && !preview && (
+          <div className="connection-notice">
+            <CircleAlert size={15} />
+            <span>Open the desktop app for live VPN and session data.</span>
           </div>
-          <div className="status-details">
-            <div><span className="detail-label">PUBLIC IP</span><strong className="mono">{snapshot.publicIp || "Checking…"}</strong></div>
-            <div><span className="detail-label">RECOVERY STATE</span><strong>{recoveryLabel}</strong></div>
-            {current && <div className="status-action"><button className="disconnect-button" disabled={!!action || busy} onClick={() => call("disconnect_vpn")}>Disconnect VPN <ArrowUpRight size={15} /></button></div>}
+        )}
+        {error && (
+          <div className="error-banner" role="alert">
+            <CircleAlert size={16} />
+            <span>{error}</span>
+            <button
+              className="icon-button"
+              aria-label="Dismiss error"
+              onClick={() => {
+                setNotice(null);
+                setDismissedError(snapshot.lastError);
+              }}
+            >
+              <X size={15} />
+            </button>
           </div>
-        </section>
+        )}
 
-        <div className="metrics-grid" aria-label="At a glance">
-          <div className="metric"><span className="metric-icon blue"><Monitor size={18} /></span><div><span>ACTIVE SESSIONS</span><strong>{sessions.length}</strong></div></div>
-          <div className="metric"><span className="metric-icon amber"><CircleAlert size={18} /></span><div><span>NEED RECOVERY</span><strong>{limitedCount}</strong></div></div>
-          <div className="metric"><span className="metric-icon green"><Server size={18} /></span><div><span>AVAILABLE RELAYS</span><strong>{snapshot.servers.length}</strong></div></div>
-          <span className={`phase-indicator ${busy ? "working" : ""}`}>{busy ? <LoaderCircle size={17} className="spin" /> : snapshot.monitoring ? <Activity size={17} /> : <Pause size={17} />}{busy ? "Recovery in progress" : snapshot.monitoring ? "Ready to recover" : "Standing by"}</span>
-        </div>
-
-        <div className="content-grid">
-          <div className="primary-column">
-            <div className="column-title"><div><span className="eyebrow">YOUR WORK</span><h2>Active sessions</h2><p>Orca projects and live OpenCode work, in one place.</p></div><button className="secondary-button" disabled={!desktop} onClick={() => setPromptTarget("global")}><Settings2 size={16} /> Default prompt</button></div>
-            <SessionSection title="Orca terminals" subtitle="Grouped by project" icon={<Command size={19} />} targets={snapshot.orcaSessions} onRecover={id => call("recover_now", { targetId: id })} onPrompt={setPromptTarget} busy={busy} groupByProject />
-            <SessionSection title="Other OpenCode sessions" subtitle="Active shared-service work and affected sessions" icon={<HardDrive size={19} />} targets={snapshot.otherSessions} onRecover={id => call("recover_now", { targetId: id })} onPrompt={setPromptTarget} busy={busy} />
-
-            <section className="panel history-panel">
-              <div className="section-heading plain"><span className="heading-icon"><Clock3 size={19} /></span><div className="heading-text"><h2>Recovery history</h2><p>Recent connection and session events</p></div></div>
-              <div className="history-list">{recentHistory.length ? recentHistory.map((entry, index) => <div className="history-row" key={`${entry.at}-${index}`}><span className={`history-dot ${entry.level}`} /><span>{entry.message}</span><time>{timeAgo(entry.at)}</time></div>) : <div className="empty-state history-empty"><span className="empty-icon"><Activity size={20} /></span><div><strong>No recovery events yet</strong><span>Connection and continuation activity will appear here.</span></div></div>}</div>
-            </section>
-          </div>
-
-          <aside className="secondary-column">
-            <section className="panel relay-panel">
-              <div className="relay-heading"><div><span className="eyebrow">VPN GATE</span><h2>Recommended relays</h2><p>Lower ping and higher line speed rise to the top.</p></div><button className="secondary-button refresh-button" disabled={!desktop || action === "refresh_servers"} onClick={() => call("refresh_servers")}>{action === "refresh_servers" ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />} Refresh list</button></div>
-              <div className="relay-meta"><span><span className="live-dot" /> {snapshot.servers.length} eligible TCP servers</span><span>Updated {timeAgo(snapshot.refreshedAt)}</span></div>
-              <div className="server-table">
-                <div className="table-header"><span>SERVER</span><span>PING</span><span>SPEED</span></div>
-                {visibleServers.length ? visibleServers.map((server, index) => <button key={server.id} className={`server-row ${snapshot.preferredServer === server.id ? "preferred" : ""} ${current?.id === server.id ? "current" : ""}`} aria-pressed={snapshot.preferredServer === server.id} title="Prioritize this server for the next recovery" onClick={() => call("set_preferred_server", { serverId: snapshot.preferredServer === server.id ? null : server.id })}><span className="server-name"><i>{String(index + 1).padStart(2, "0")}</i><span><strong>{server.country}{snapshot.preferredServer === server.id && <em>Preferred</em>}{current?.id === server.id && <em>Connected</em>}</strong><small>{server.host}</small></span></span><span className="ping"><Wifi size={13} />{server.pingMs} ms</span><span className="speed">{Math.round(server.speedMbps)} <small>Mbps</small></span></button>) : <div className="empty-state relay-empty"><span className="empty-icon"><WifiOff size={20} /></span><div><strong>No relay list yet</strong><span>Refresh to find available VPN Gate servers.</span></div></div>}
+        {view === "sessions" && (
+          <>
+            <div className="view-controls">
+              <div className="segmented-control" aria-label="Filter sessions">
+                {(
+                  [
+                    ["all", "All sessions"],
+                    ["limited", "Needs recovery"],
+                    ["busy", "Working"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    aria-pressed={filter === value}
+                    className={filter === value ? "active" : ""}
+                    onClick={() => setFilter(value)}
+                  >
+                    {label}
+                    {value === "limited" && limited > 0 && (
+                      <span>{limited}</span>
+                    )}
+                  </button>
+                ))}
               </div>
-              {snapshot.servers.length > 7 && <button className="show-more" onClick={() => setShowAllServers(value => !value)}>{showAllServers ? "Show fewer relays" : `Show more relays (${Math.min(snapshot.servers.length, 30) - 7})`} <ChevronDown size={15} className={showAllServers ? "up" : ""} /></button>}
-            </section>
-            <div className="info-card"><ShieldCheck size={20} /><div><strong>Verified before continuing</strong><p>Recovery resumes only after SoftEther connects and your public IP changes.</p></div></div>
-          </aside>
-        </div>
-        <footer><span>OpenCode Recovery · Windows desktop</span><span>{desktop ? loaded ? "Connected to local controller" : "Loading controller…" : "Browser preview"}</span></footer>
+              <span className="view-count">
+                {shownSessions.length}{" "}
+                {shownSessions.length === 1 ? "session" : "sessions"}
+              </span>
+            </div>
+            <div className="workspace-body">
+              <div className="session-list-pane">
+                <div className="list-column-labels">
+                  <span>Session / project</span>
+                  <span>Status</span>
+                  <span>Updated</span>
+                </div>
+                <div className="session-groups" onKeyDown={moveSession}>
+                  {shownSessions.length ? (
+                    <>
+                      {shownGroups.map((group) =>
+                        renderGroup(
+                          projectName(group.project),
+                          group.project,
+                          group.targets,
+                        ),
+                      )}
+                      {shownOther.length > 0 &&
+                        renderGroup(
+                          "Other OpenCode sessions",
+                          "Shared service",
+                          shownOther,
+                          true,
+                        )}
+                    </>
+                  ) : (
+                    <EmptyState
+                      icon={<Terminal size={29} strokeWidth={1.3} />}
+                      title={
+                        search || filter !== "all"
+                          ? "No matching sessions"
+                          : "No active sessions"
+                      }
+                    >
+                      {search || filter !== "all"
+                        ? "Try another search or session filter."
+                        : scope === "other"
+                          ? "OpenCode sessions appear while they are active in the shared service."
+                          : "Existing OpenCode work in Orca and the shared service will appear here."}
+                    </EmptyState>
+                  )}
+                </div>
+                <div className="list-footnote">
+                  <ShieldCheck size={13} />
+                  <span>
+                    Only live work and observed rate-limit incidents are listed.
+                  </span>
+                </div>
+              </div>
+              <SessionInspector
+                target={selected}
+                snapshot={snapshot}
+                canRecover={desktop && !recovering}
+                pending={pending}
+                onClose={() => setSelectedId(null)}
+                onEdit={(target, instant) => setEditor({ target, instant })}
+                run={run}
+              />
+            </div>
+          </>
+        )}
+
+        {view === "relays" && (
+          <>
+            <div className="view-controls">
+              <div className="relay-sort">
+                <label htmlFor="relay-sort">Sort by</label>
+                <select
+                  id="relay-sort"
+                  value={relaySort}
+                  onChange={(event) => setRelaySort(event.target.value)}
+                >
+                  <option value="recommended">Recommended</option>
+                  <option value="ping">Lowest ping</option>
+                  <option value="speed">Highest line speed</option>
+                </select>
+              </div>
+              <button
+                className="secondary-button compact"
+                disabled={!desktop || pending === "refresh_servers"}
+                onClick={() => run("refresh_servers")}
+              >
+                {pending === "refresh_servers" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : (
+                  <RefreshCw size={14} />
+                )}
+                Refresh list
+              </button>
+            </div>
+            <div className="workspace-body">
+              <div className="relay-list-pane">
+                <div className="relay-list-scroll">
+                  <table className="relay-table">
+                    <thead>
+                      <tr>
+                        <th>Location / server</th>
+                        <th className="ip-column">IP address</th>
+                        <th>
+                          Ping{relaySort === "ping" && <ArrowDown size={10} />}
+                        </th>
+                        <th>
+                          Line speed
+                          {relaySort === "speed" && <ArrowDown size={10} />}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {relays.map((server) => (
+                        <tr
+                          key={server.id}
+                          className={relay?.id === server.id ? "selected" : ""}
+                          onClick={() => setSelectedRelayId(server.id)}
+                        >
+                          <td>
+                            <button
+                              aria-pressed={relay?.id === server.id}
+                              className="relay-select"
+                              onClick={() => setSelectedRelayId(server.id)}
+                            >
+                              <span className="country-code">
+                                {countryCode(server.country)}
+                              </span>
+                              <span>
+                                <strong>
+                                  {countryName(server.country)}
+                                  {snapshot.preferredServer === server.id && (
+                                    <Check
+                                      size={12}
+                                      aria-label="Preferred relay"
+                                    />
+                                  )}
+                                </strong>
+                                <small>{server.host}</small>
+                              </span>
+                            </button>
+                          </td>
+                          <td className="ip-column mono">{server.ip}</td>
+                          <td className={server.pingMs < 50 ? "low-ping" : ""}>
+                            {server.pingMs}
+                            <span className="unit"> ms</span>
+                          </td>
+                          <td>{lineSpeed(server.speedMbps)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!relays.length && (
+                    <EmptyState
+                      icon={<Globe2 size={29} strokeWidth={1.3} />}
+                      title={
+                        search ? "No matching relays" : "No relay list yet"
+                      }
+                    >
+                      {search
+                        ? "Search by location, hostname, or IP address."
+                        : "Refresh the list to load available VPN Gate servers."}
+                    </EmptyState>
+                  )}
+                </div>
+                <div className="relay-list-footer">
+                  <span>
+                    {relays.length} relays <i />
+                    Updated {timeAgo(snapshot.refreshedAt)}
+                  </span>
+                  <span>
+                    {snapshot.preferredServer
+                      ? "Preferred relay set"
+                      : "Automatic selection"}
+                  </span>
+                </div>
+              </div>
+              <RelayInspector
+                server={relay}
+                snapshot={snapshot}
+                pending={pending}
+                available={controlsAvailable}
+                run={run}
+              />
+            </div>
+          </>
+        )}
+
+        {view === "activity" && (
+          <>
+            <div className="view-controls">
+              <div className="segmented-control" aria-label="Filter activity">
+                {[
+                  ["all", "All events"],
+                  ["warning", "Warnings"],
+                  ["error", "Errors"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={activityFilter === value ? "active" : ""}
+                    aria-pressed={activityFilter === value}
+                    onClick={() => setActivityFilter(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className="view-count">{events.length} events</span>
+            </div>
+            <div className="activity-view">
+              <div className="activity-heading">
+                <Clock3 size={17} />
+                <div>
+                  <h2>Connection & recovery log</h2>
+                  <p>
+                    VPN changes, continuation receipts, and connection errors.
+                  </p>
+                </div>
+              </div>
+              {events.length ? (
+                <div className="event-list">
+                  {events.map((event, index) => (
+                    <div
+                      className={`event-row ${event.level}`}
+                      key={`${event.at}-${index}`}
+                    >
+                      <span className="event-icon">
+                        {event.level === "success" ? (
+                          <Check size={14} />
+                        ) : event.level === "error" ||
+                          event.level === "warning" ? (
+                          <CircleAlert size={14} />
+                        ) : (
+                          <Activity size={14} />
+                        )}
+                      </span>
+                      <div>
+                        <span className="event-level">{event.level}</span>
+                        <p>{event.message}</p>
+                      </div>
+                      <time title={new Date(event.at).toLocaleString()}>
+                        {new Date(event.at).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </time>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={<Clock3 size={29} strokeWidth={1.3} />}
+                  title={
+                    search || activityFilter !== "all"
+                      ? "No matching events"
+                      : "No activity yet"
+                  }
+                >
+                  {search || activityFilter !== "all"
+                    ? "Try another search or event filter."
+                    : "Connections, continuation receipts, and errors will appear here."}
+                </EmptyState>
+              )}
+            </div>
+          </>
+        )}
+
+        <footer className="statusbar">
+          <span>
+            <i className={loaded ? "online" : ""} />
+            {preview
+              ? "Preview data · no live connections"
+              : desktop
+                ? loaded
+                  ? "Local controller connected"
+                  : "Connecting to controller…"
+                : "Desktop app required"}
+          </span>
+          <span className={recovering ? "recovery-status" : ""}>
+            {recovering ? (
+              <LoaderCircle className="spin" size={12} />
+            ) : snapshot.monitoring ? (
+              <Radio size={12} />
+            ) : null}
+            {recovering
+              ? snapshot.phase
+              : snapshot.monitoring
+                ? "Watching for rate limits"
+                : "Monitoring paused"}
+          </span>
+        </footer>
       </main>
-      {promptTarget && <PromptDialog target={promptDialogTarget} current={promptCurrent} global={snapshot.globalPrompt} onClose={() => setPromptTarget(null)} onSave={value => { if (promptTarget === "global") { call("set_global_prompt", { prompt: value || snapshot.globalPrompt }); } else { call("set_prompt_override", { targetId: promptTarget.id, prompt: value }); } setPromptTarget(null); }} />}
+      {editor && (
+        <PromptDialog
+          editor={editor}
+          globalPrompt={snapshot.globalPrompt}
+          onClose={() => setEditor(null)}
+          run={run}
+        />
+      )}
     </div>
   );
 }
 
-createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
