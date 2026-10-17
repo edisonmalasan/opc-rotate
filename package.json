@@ -2,13 +2,22 @@
   "name": "opc-rotate",
   "private": true,
   "version": "0.1.0",
+  "description": "Windows desktop recovery dashboard for live OpenCode sessions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edisonmalasan/opc-rotate.git"
+  },
+  "homepage": "https://github.com/edisonmalasan/opc-rotate#readme",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "tauri": "node scripts/tauri.mjs",
-    "test": "node --test integrations/opencode/presence.test.mjs && cargo test --manifest-path src-tauri/Cargo.toml"
+    "test": "node --test integrations/opencode/presence.test.mjs && cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "check:release": "node scripts/check-release.mjs",
+    "release:build": "node scripts/release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

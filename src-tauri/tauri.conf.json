@@ -26,6 +26,12 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "publisher": "Edison Malasan",
+    "copyright": "Copyright (c) 2026 Edison Malasan",
+    "licenseFile": "../LICENSE",
+    "homepage": "https://github.com/edisonmalasan/opc-rotate",
+    "shortDescription": "Recovery dashboard for live OpenCode sessions",
+    "longDescription": "Monitor live OpenCode sessions by project and recover selected work through the separately installed SoftEther VPN Client.",
     "icon": ["icons/icon.png", "icons/icon.ico"]
   }
 }

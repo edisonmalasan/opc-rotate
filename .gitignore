@@ -3,6 +3,11 @@ dist/
 src-tauri/target/
 .impeccable/
 .env
+.env.*
+!.env.example
+*.pfx
+*.p12
+release-artifacts/
 *.log
 tsconfig.tsbuildinfo
 src-tauri/gen/

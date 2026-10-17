@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "OpenCode recovery dashboard"
 authors = ["Edison"]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/edisonmalasan/opc-rotate"
 
 [lib]
 name = "opc_rotate_lib"
