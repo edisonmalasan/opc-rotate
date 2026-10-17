@@ -1,0 +1,311 @@
+use crate::models::SessionTarget;
+use crate::process::now_ms;
+use reqwest::Url;
+use serde_json::Value;
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+pub struct OpenCodeClient {
+    http: reqwest::Client,
+    base: Url,
+    password: String,
+}
+
+impl OpenCodeClient {
+    pub fn discover(http: reqwest::Client) -> Result<Self, String> {
+        let home = dirs::home_dir().ok_or("Home directory not found")?;
+        let path: PathBuf = home
+            .join(".local")
+            .join("state")
+            .join("opencode")
+            .join("service.json");
+        let content = std::fs::read_to_string(path)
+            .map_err(|_| "OpenCode shared service is not running".to_string())?;
+        let json: Value = serde_json::from_str(&content)
+            .map_err(|_| "OpenCode service state is invalid".to_string())?;
+        let url = json["url"]
+            .as_str()
+            .ok_or("OpenCode service URL is missing")?;
+        let base = Url::parse(url).map_err(|e| format!("Invalid OpenCode service URL: {e}"))?;
+        if base.scheme() != "http"
+            || !matches!(base.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
+        {
+            return Err("OpenCode service must be on loopback".into());
+        }
+        let password = json["password"]
+            .as_str()
+            .ok_or("OpenCode service password is missing")?
+            .to_string();
+        Ok(Self {
+            http,
+            base,
+            password,
+        })
+    }
+
+    async fn get(&self, path: &str) -> Result<Value, String> {
+        let url = self.base.join(path).map_err(|e| e.to_string())?;
+        self.http
+            .get(url)
+            .basic_auth("opencode", Some(&self.password))
+            .send()
+            .await
+            .map_err(|e| format!("OpenCode service request failed: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("OpenCode service returned an error: {e}"))?
+            .json()
+            .await
+            .map_err(|e| format!("OpenCode response was invalid: {e}"))
+    }
+
+    pub async fn active_ids(&self) -> Result<HashSet<String>, String> {
+        let value = self.get("/api/session/active").await?;
+        Ok(value["data"]
+            .as_object()
+            .map(|map| map.keys().cloned().collect())
+            .unwrap_or_default())
+    }
+
+    pub async fn list_targets(
+        &self,
+        orca_dirs: &[String],
+        previously_active: &HashSet<String>,
+    ) -> Result<Vec<SessionTarget>, String> {
+        let value = self.get("/api/session?limit=50&order=desc").await?;
+        let sessions = value["data"]
+            .as_array()
+            .ok_or("OpenCode did not return sessions")?;
+        let active = self.active_ids().await?;
+        let excluded = orca_dirs
+            .iter()
+            .map(|s| normalize_path(s))
+            .collect::<HashSet<_>>();
+        let mut targets = Vec::new();
+        for session in sessions {
+            let Some(id) = session["id"].as_str() else {
+                continue;
+            };
+            let project = session["location"]["directory"].as_str().unwrap_or("");
+            if excluded.contains(&normalize_path(project)) {
+                continue;
+            }
+            if !active.contains(id) && !previously_active.contains(id) {
+                continue;
+            }
+            let updated_at = session["time"]["updated"].as_u64().unwrap_or_else(now_ms);
+            let path = format!("/api/session/{id}/message?limit=1&order=desc");
+            let latest = self.get(&path).await.ok();
+            let message = latest
+                .as_ref()
+                .and_then(|v| v["data"].as_array())
+                .and_then(|a| a.first());
+            let error = if active.contains(id) {
+                None
+            } else {
+                message.and_then(rate_limit_error)
+            };
+            if !include_other_session(
+                active.contains(id),
+                previously_active.contains(id),
+                error.is_some(),
+            ) {
+                continue;
+            }
+            let error_key = error
+                .as_ref()
+                .and_then(|_| message.and_then(|m| m["id"].as_str()))
+                .map(|message_id| format!("api:{id}:{message_id}"));
+            targets.push(SessionTarget {
+                id: format!("api:{id}"),
+                source: "other".into(),
+                title: session["title"]
+                    .as_str()
+                    .unwrap_or("Untitled session")
+                    .into(),
+                project: project.into(),
+                state: if error.is_some() {
+                    "rate-limited"
+                } else if active.contains(id) {
+                    "busy"
+                } else {
+                    "idle"
+                }
+                .into(),
+                last_error: error,
+                error_key,
+                prompt_override: None,
+                updated_at,
+            });
+        }
+        Ok(targets)
+    }
+
+    pub async fn prompt(&self, id: &str, prompt: &str) -> Result<String, String> {
+        let url = self
+            .base
+            .join(&format!("/api/session/{id}/prompt"))
+            .map_err(|e| e.to_string())?;
+        let response = self
+            .http
+            .post(url)
+            .basic_auth("opencode", Some(&self.password))
+            .json(&serde_json::json!({"text":prompt}))
+            .send()
+            .await
+            .map_err(|e| format!("OpenCode prompt delivery is uncertain: {e}"))?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "OpenCode rejected the prompt (HTTP {})",
+                response.status()
+            ));
+        }
+        let value: Value = response.json().await.map_err(|e| {
+            format!("OpenCode accepted a prompt but its receipt was unreadable: {e}")
+        })?;
+        Ok(value["data"]["id"].as_str().unwrap_or("accepted").into())
+    }
+}
+
+fn include_other_session(active: bool, previously_active: bool, rate_limited: bool) -> bool {
+    active || (previously_active && rate_limited)
+}
+
+fn rate_limit_error(message: &Value) -> Option<String> {
+    if message["type"].as_str() != Some("idle") || message["outcome"].as_str() != Some("failed") {
+        return None;
+    }
+    let error = &message["error"];
+    let status = error["status"].as_u64();
+    let kind = error["type"].as_str().unwrap_or("");
+    let text = error["message"].as_str().unwrap_or("");
+    if status == Some(429)
+        && (kind == "provider.rate-limit"
+            || kind == "provider.quota"
+            || text.to_ascii_lowercase().contains("rate limit"))
+    {
+        Some(text.to_string())
+    } else {
+        None
+    }
+}
+
+fn normalize_path(path: &str) -> String {
+    path.replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn mock_service(
+        reply: Option<&'static str>,
+    ) -> (OpenCodeClient, std::thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 4096];
+            loop {
+                let read = socket.read(&mut buffer).unwrap();
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if let Some(header_end) = request.windows(4).position(|chunk| chunk == b"\r\n\r\n")
+                {
+                    let headers = String::from_utf8_lossy(&request[..header_end]);
+                    let length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|value| value.trim().parse::<usize>().ok())
+                        })
+                        .unwrap_or(0);
+                    if request.len() >= header_end + 4 + length {
+                        break;
+                    }
+                }
+            }
+            if let Some(body) = reply {
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                socket.write_all(response.as_bytes()).unwrap();
+            }
+            String::from_utf8_lossy(&request).to_string()
+        });
+        let client = OpenCodeClient {
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            base: Url::parse(&format!("http://{address}/")).unwrap(),
+            password: "test-password".into(),
+        };
+        (client, handle)
+    }
+
+    #[test]
+    fn detects_actual_failed_429_event() {
+        let message = serde_json::json!({"type":"idle","outcome":"failed","error":{"type":"provider.quota","status":429,"message":"Rate limit exceeded"}});
+        assert_eq!(
+            rate_limit_error(&message).as_deref(),
+            Some("Rate limit exceeded")
+        );
+        assert!(
+            rate_limit_error(&serde_json::json!({"type":"assistant","error":{"status":429}}))
+                .is_none()
+        );
+        assert!(rate_limit_error(&serde_json::json!({"type":"idle","outcome":"failed","error":{"status":500,"message":"server error"}})).is_none());
+    }
+
+    #[test]
+    fn normalizes_windows_paths_for_orca_deduplication() {
+        assert_eq!(
+            normalize_path(r"C:\Projects\Vise\"),
+            normalize_path("c:/projects/vise")
+        );
+    }
+
+    #[test]
+    fn shows_live_sessions_and_incidents_from_observed_work_only() {
+        assert!(include_other_session(true, false, false));
+        assert!(include_other_session(false, true, true));
+        assert!(!include_other_session(false, false, true));
+        assert!(!include_other_session(false, true, false));
+    }
+
+    #[tokio::test]
+    async fn prompt_posts_once_and_returns_service_receipt() {
+        let (client, server) = mock_service(Some(r#"{"data":{"id":"receipt-123"}}"#));
+        assert_eq!(
+            client.prompt("session-1", "Continue safely").await.unwrap(),
+            "receipt-123"
+        );
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /api/session/session-1/prompt HTTP/1.1"));
+        assert!(request.contains("\"text\":\"Continue safely\""));
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: basic"));
+    }
+
+    #[tokio::test]
+    async fn dropped_prompt_response_is_reported_as_uncertain() {
+        let (client, server) = mock_service(None);
+        let error = client
+            .prompt("session-2", "Continue safely")
+            .await
+            .unwrap_err();
+        assert!(error.contains("uncertain"));
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /api/session/session-2/prompt HTTP/1.1"));
+    }
+}
