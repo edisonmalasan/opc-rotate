@@ -39,8 +39,19 @@ Outcome: a source build and installer work on the target Windows setup.
 - [x] Visually verify the workspace with live data in an unobstructed native window. The rebuilt release displayed both Thesis tabs under Other sessions and both Vise tabs under Orca sessions, with separate selected/background labels and Idle status. The sidebar counted five live sessions with no duplicate legacy terminal rows. Native project navigation also passed.
 - [ ] Verify the new exact-session plugin continuation during a real rate-limit event for Orca and outside clients, including a background tab. Parser, receipt, and busy/closed-tab behavior have mock coverage; no live prompt or VPN change was performed for this tab-discovery update.
 
+## 3. Preview release preparation
+
+- [x] Replace the obsolete product brief with a release-oriented README, labeled sample screenshot, usage/troubleshooting guide, development guide, release checklist, changelog, contribution instructions, and security reporting guidance. Remove `PRODUCT.md` and its references from the project docs.
+- [x] Add the user-selected MIT license and package/installer metadata. Preserve third-party license notices.
+- [x] Pin the tested Node/Rust toolchains and enforce consistent npm/Cargo/Tauri versions. Build with locked dependencies and reject preview fixtures in production assets.
+- [x] Run a clean npm install, all 40 automated tests, formatting, dependency audit (no reported vulnerabilities), production build, and NSIS packaging locally. Generate an installer plus its matching SHA-256 checksum under ignored `release-artifacts/v0.1.0/`.
+
+The Windows GitHub workflow runs these gates on pull requests, main pushes, or manual dispatch and uploads installer/checksum artifacts. Consult its run for the exact commit's result. It does not tag or publish a release. Version 0.1.0 remains a preview candidate until the live continuation and clean-PC checks are completed; see [RELEASING.md](RELEASING.md).
+
 ## Deferred
 
+- [ ] Complete the clean-PC install, upgrade, and uninstall smoke tests before treating the preview candidate as a verified public release.
+- [ ] Verify publisher signing and decide on an update distribution mechanism; neither is configured for 0.1.0.
 - [ ] Connect to arbitrary private OpenCode services without a live CLI plugin after explicit server setup is designed. Live connected private clients already work through their own SDK.
 - [ ] Verify provider egress over IPv6 as well as IPv4; current checks confirm IPv4 only.
 

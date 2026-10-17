@@ -22,7 +22,8 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 | Background CLI execution and Windows console suppression | `src-tauri/src/process.rs` |
 | UI data contracts | `src/types.ts`, `src-tauri/src/models.rs` |
 | Monitoring selection and terminal inheritance | `src/monitoring.ts`, `Settings` in `src-tauri/src/models.rs`, queue/commands in `src-tauri/src/lib.rs` |
-| Product intent | `PRODUCT.md`, `docs/ROADMAP.md` |
+| User setup and release limits | `README.md`, `docs/USAGE.md`, `docs/ROADMAP.md` |
+| Release packaging and CI | `scripts/release.mjs`, `scripts/check-release.mjs`, `.github/workflows/windows.yml`, `docs/RELEASING.md` |
 
 ## Stack and commands
 
@@ -31,14 +32,15 @@ React 19, TypeScript, and Vite 6 provide the UI (`package.json`). Tauri 2 and Ru
 Run from the repository root:
 
 ```powershell
-npm install
+npm ci
 npm run tauri -- dev
 npm run build
 npm test
 npm run tauri -- build
+npm run release:build
 ```
 
-`npm run build` includes TypeScript checking. `npm test` runs the Node presence-plugin tests and Rust tests. The Tauri build creates an NSIS installer under `src-tauri/target/release/bundle/nsis/`.
+`npm run build` includes TypeScript checking. `npm test` runs the Node presence-plugin tests and locked Rust tests. The Tauri build creates an NSIS installer under `src-tauri/target/release/bundle/nsis/`. `npm run release:build` checks versions and fixture exclusion, builds with the Cargo lockfile, then copies the installer and SHA-256 checksum into ignored `release-artifacts/v<version>/`. Toolchain versions are pinned in `.node-version` and `rust-toolchain.toml`. See `docs/RELEASING.md` for manual acceptance gaps before publication.
 `npm run tauri -- dev` selects an available port from 1420 to 1499 and passes it to both Vite and Tauri; use this command for desktop development when 1420 may be occupied.
 For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty=1` for empty states. Preview edits are local to the page, and fixture data is excluded from release builds. Keep sample data clearly labeled and isolated from live recovery.
 

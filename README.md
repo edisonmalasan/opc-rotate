@@ -1,71 +1,68 @@
 # OpenCode Recovery
 
-A Windows desktop dashboard for recovering OpenCode sessions after an IP-sensitive rate limit. It ranks public VPN Gate relays, connects through the installed SoftEther VPN Client, verifies that the public IP changed, and sends a continuation prompt to affected sessions.
+A Windows desktop dashboard for live OpenCode work. Choose which sessions to monitor, inspect their status by project, and recover affected work through the installed SoftEther VPN Client.
 
-## Requirements
+[![Windows release check](https://github.com/edisonmalasan/opc-rotate/actions/workflows/windows.yml/badge.svg)](https://github.com/edisonmalasan/opc-rotate/actions/workflows/windows.yml) · [MIT license](LICENSE) · [Changelog](CHANGELOG.md)
 
-- Windows with SoftEther VPN Client and an enabled virtual adapter named `VPN`.
-- The VPN Gate Client plug-in is useful for manual inspection, but the app reads VPN Gate's public CSV itself.
-- OpenCode v2 with CLI tab-plugin support (verified on 2.0.32). The shared service also provides a fallback for responding sessions.
-- Orca CLI available as `orca` for Orca terminals.
-- Node.js and Rust to build from source.
+![OpenCode Recovery showing project-grouped sessions, monitoring choices, and a session inspector](docs/images/dashboard.jpg)
 
-## Run
+*Development preview with sample data. No live connection is shown.*
+
+## Status and downloads
+
+**0.1.0 preview candidate — Windows x64.** The repo builds an NSIS installer. Live recovery using the new exact-session transport and clean-PC installation still need verification; see [known limitations](docs/USAGE.md#preview-limitations).
+
+Installers will be listed under [GitHub Releases](https://github.com/edisonmalasan/opc-rotate/releases) when published. For a tested commit before publication, download the installer and matching `SHA256SUMS.txt` from its successful [Windows workflow run](https://github.com/edisonmalasan/opc-rotate/actions/workflows/windows.yml), or [build from source](docs/DEVELOPMENT.md). Current packages are unsigned and have no automatic updater.
+
+## What it does
+
+- Shows live tabs from Orca and other terminals beneath project folders, including idle and background sessions.
+- Saves monitoring choices per session or terminal, with editable continuation prompts.
+- Ranks VPN Gate relays by ping and advertised speed, then controls the separately installed SoftEther client.
+- Waits for detected work to become idle, verifies a changed public IPv4 address, and addresses continuation to the exact affected session.
+- Bounds relay attempts and IP changes, records activity, and avoids automatically repeating uncertain prompt submissions.
+
+## Get started
+
+1. Install **SoftEther VPN Client** in its default location, with its service running and an enabled virtual adapter named **VPN**. The VPN Gate Client plug-in is optional; Recovery fetches its own relay list.
+2. Use **OpenCode v2 with CLI tab-plugin support** (verified with 2.0.32). For Orca terminals, also make the `orca` CLI available on `PATH`.
+3. Install and open Recovery. Keep your existing terminals open. If a session is missing, reopen that OpenCode client once to load Recovery's presence plugin.
+4. Select the sessions or terminals you want included, then enable **Monitoring**. It starts off on a fresh install.
+
+Recovery recognizes rate-limit/quota failures and the specific failed-provider message “OpenCode's free tier can only be used from within OpenCode.” A VPN change affects the whole machine, so all detected busy sessions delay it, including excluded sessions. A new IP does not guarantee the provider will accept the request.
+
+The default continuation is **“Continue from where you stopped after the rate limit”**. You can edit it globally or per session. Recovery preserves your terminals and the selected OpenCode tab.
+
+See [setup, usage, and troubleshooting](docs/USAGE.md) for requirements, delivery safeguards, local data, and uninstall steps.
+
+## Build and verify
+
+On Windows x64 with the [development prerequisites](docs/DEVELOPMENT.md):
 
 ```powershell
-npm install
+npm ci
 npm run tauri -- dev
 ```
 
-The dev command selects the first available loopback port from 1420 to 1499 and gives the same URL to Vite and Tauri. If another process is using 1420, the app starts on the next free port without stopping that process. Use the npm command above for this coordinated fallback. `npm run dev` starts only Vite and also falls back to the next available port.
-
-To build a Windows installer:
+For a checked installer and checksum:
 
 ```powershell
-npm run tauri -- build
-```
-
-The installer is written under `src-tauri/target/release/bundle/nsis/`.
-
-## How it works
-
-The sidebar separates **Sessions**, **VPN relays**, and **Activity**. **Orca sessions** and **Other sessions** list projects directly. Both lists show live OpenCode tabs directly beneath **project folder headings**, with one session count per project and no redundant terminal heading. All open tabs appear together, including background tabs. Each has its own **Idle**, **Working**, **Needs recovery**, or **Status unavailable** state; **Selected tab** identifies the terminal's current tab independently of activity. Choose a project to filter its sessions, or **Sessions** to see all work. A project can appear in both sections when separate terminals use the same directory. Select a session to inspect its error, edit its continuation prompt, select its OpenCode tab, or choose **Recover session**. Up and Down arrow keys move between session rows.
-
-Monitoring starts **off**. Turn on the **Monitoring** switch in the toolbar when ready. The compact route bar stays visible across all views. In **VPN relays**, use **Refresh list** to fetch servers immediately, sort by recommendation, ping, or line speed, then select a relay to review its details. **Prioritize this relay** makes it the first candidate for the next recovery; **Use automatic selection** removes that preference. The list also refreshes automatically every five minutes. **Activity** records connection changes, prompt receipts, and errors.
-
-Use the checkbox beside each session to include or exclude it from recovery. All sessions are included initially; the count above the list shows your selection. In the session inspector, **Monitor this terminal** updates all its tabs and sets the default for new tabs inside that terminal. A session checkbox can override the terminal choice; a mixed terminal checkbox indicates overrides. Choices are saved across app restarts. Terminal rules follow the detected terminal identity, while individual choices follow the exact session ID. Unchecked sessions stay visible, marked **Not monitored**, but cannot trigger recovery or receive continuation prompts. Unchecking removes their queued continuation; an already submitted prompt cannot be recalled. The master switch pauses recovery without changing your selection and clears queued work. Recovery still waits for busy sessions outside your selection because changing the VPN affects the whole machine.
-
-Automatic recovery also recognizes a failed provider event containing “OpenCode's free tier can only be used from within OpenCode.” This applies to monitored sessions in both Orca and outside terminals, regardless of the event's HTTP status. Ordinary permission errors and assistant text do not trigger rotation. This error uses the same verified-IP, duplicate-receipt, and two-IP retry limits as rate-limit errors.
-
-When a session reports a rate-limit error, the app waits for other shared-service OpenCode calls and Orca OpenCode terminals to become idle. It tries up to five relays in ranked order, allowing 20 seconds for each connection to establish. A failed or timed-out SoftEther profile is disconnected, deleted, and checked for removal before the next server. Once SoftEther reports a connected account, the app checks its public IPv4 address through ipify. Only a changed IP allows continuation prompts to be sent.
-
-Orca supplies terminal identity, project paths, and terminal selection through its CLI. A live OpenCode CLI plugin reports every tab in each terminal and submits continuations to the exact session ID through that client's connected SDK. Recovery can continue a background tab without changing the selected tab. Both `opencode` and `opencode --auto` work. Connected private-service clients are supported through the same plugin without discovering their endpoints or credentials. Responding shared-service sessions also have an API fallback. Historical session records and saved global tab files are never enumerated for discovery. The same session opened in multiple clients is one recovery target, preferring its Orca owner; different sessions in the same project remain separate.
-
-Recovery installs a small CLI presence plugin at `~/.config/opencode/plugins/opc-rotate-presence/tui.js` (or under `OPENCODE_CONFIG_DIR` when set). OpenCode discovers local CLI plugins automatically; on the verified v2.0.32 setup, existing terminals loaded it without restarting. If an idle terminal remains missing, reopen that OpenCode client once after starting Recovery. The dashboard shows service errors and setup guidance under Other sessions. Custom OpenCode configurations must allow local plugins.
-
-The plugin reports live tab IDs, titles, projects, per-tab status, selection, terminal/client identity, connected server PID, and a timestamp to `~/.local/state/opc-rotate/presence`. Presence records contain no prompts or credentials. Reports refresh every two seconds and expire after eight seconds. Closed tabs disappear, except an already observed rate-limit incident remains labeled **Closed tab** until reopened and cannot receive recovery while closed. Unavailable service status is never shown as Idle. An Orca terminal without the plugin is labeled unavailable and blocks VPN changes until its execution status is known.
-
-Tab selection and continuation requests use local `requests/<client-id>` and `receipts/<client-id>` folders beside presence. Requests contain the continuation text when needed and are removed when claimed or timed out. A receipt is claimed before sending, so an uncertain result is never submitted again automatically. Recovery persists its incident guard before delivery. No server password is copied into this channel.
-
-The default message is “Continue from where you stopped after the rate limit”. The sidebar's **Continuation prompt** action edits it. Existing installs adopt the shorter wording only when their saved prompt matches the previous built-in default. The session inspector's **Edit** action sets an override for that session. If an affected session is busy after the IP changes, its continuation waits for that session to become idle; it does not rotate the VPN again for that queued prompt. A prompt with an ambiguous delivery result is not resent automatically. If a new rate-limit error appears after two verified IP changes for the same session, recovery stops and Activity records the failure. **Recover session** can be used manually on an included session, even with the master switch paused.
-
-Only profiles created with this app's `OPCRotate_` prefix are disconnected or deleted. Incomplete profiles from an interrupted attempt are removed before recovery. If another SoftEther profile is currently connected, automatic recovery stops rather than changing that connection.
-
-## Verification
-
-```powershell
-npm run build
+npm run check:release
 npm test
-npm run tauri -- build
+npm run release:build
 ```
 
-The automated tests use simulated SoftEther responses and never change the VPN. To validate live recovery, enable monitoring during a real rate-limit event and confirm the sequence in **Activity**: connection failure or timeout, successful alternate relay, changed public IP, and a single continuation receipt for each affected idle session.
+Files appear in `release-artifacts/v0.1.0/`. Automated tests use mocked VPN responses and do not change your connection. The desktop dev command chooses a free port from 1420–1499. Browser-only UI checks use `npm run dev` with `?preview=1`; preview fixtures are excluded from release builds.
 
-For frontend work, run `npm run dev` and append `?preview=1` to the URL printed by Vite. This explicitly labeled development preview supplies sample sessions, relays, and events. Prompt, preference, and monitoring edits stay in memory; recovery, disconnection, and live refresh are disabled. Append `&empty=1` to inspect empty states. Preview fixtures are excluded from production builds.
+## Documentation
 
-## Current limits
+- [Setup and use](docs/USAGE.md)
+- [Development](docs/DEVELOPMENT.md) and [contributing](CONTRIBUTING.md)
+- [Release process and acceptance checklist](docs/RELEASING.md)
+- [Source map and current status](docs/CONTEXT.md)
+- [Roadmap](docs/ROADMAP.md) and [changelog](CHANGELOG.md)
+- [Security reports](SECURITY.md)
 
-- Private services without a connected live CLI plugin are not discovered; arbitrary server connection setup remains deferred.
-- The app checks IPv4 egress. If a provider request uses IPv6 outside the VPN, a changed IPv4 address alone may not restore access.
-- Public VPN Gate relays are volunteer operated; advertised speed and ping are estimates. A connection may fail despite a high rank.
-- Without a loaded presence plugin, only responding shared-service sessions and previously observed failures are visible. A response that starts and fails entirely between polls can be missed if no live presence identifies that session.
+## License
+
+[MIT](LICENSE), copyright 2026 Edison Malasan. Bundled third-party skills and dependencies retain their own license notices. OpenCode, Orca, SoftEther, and VPN Gate are separate projects; this app does not bundle their clients.

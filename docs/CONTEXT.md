@@ -1,71 +1,56 @@
 # Project context
 
-## At a glance
+## Current state
 
-**OpenCode Recovery** is a Windows Tauri dashboard for IP-sensitive OpenCode rate limits. It reads public VPN Gate relays, connects with the installed SoftEther client, verifies a changed public IPv4 address, then continues affected existing sessions. The primary user has OpenCode work in Orca terminals across projects and in the shared OpenCode service.
+OpenCode Recovery is a Windows x64 Tauri dashboard for live OpenCode sessions. Version **0.1.0** is a preview candidate. Read the [user guide](USAGE.md) for behavior and the [roadmap](ROADMAP.md) for verified milestones. Source and tests define implementation; this file maps them.
 
-The latest feature adds saved per-session monitoring checkboxes and a whole-terminal choice in the inspector for both sources. Terminal rules cover new tabs; session overrides take precedence. A cached session-to-terminal binding preserves exclusions during shared-service API fallback. Excluded sessions stay visible but cannot queue or receive recovery; changing selection prunes pending/verified-IP continuations. Pausing the master switch clears queued work, and a pause epoch prevents a raced busy receipt from restoring cancelled work. Busy-session protection still covers unchecked work because routing is machine-wide.
+The dashboard lists every live OpenCode tab directly beneath a project folder, separated into Orca and other sources. Idle/Working/Needs recovery/unavailable describe activity; selected/background describe terminal selection. Historical session lists and saved global tabs are not discovery sources. Previously observed failures remain visible after closure with no delivery route.
 
-The UI uses neutral charcoal surfaces, white/gray text, and gray selected rows. Following user feedback that the forest palette was too green, lime is limited to the real app icon, checked controls, focus rings, and enabled primary actions; disabled buttons are gray. The frontend build and UI detector passed. Browser inspection found no contrast failures in the inspected session, relay, activity, and prompt text. `src/monitoring.ts` mirrors rule precedence for rendering and development fixtures; `Settings` in `models.rs` enforces it for recovery.
+Saved monitoring rules include individual sessions and whole terminals. Session overrides win; new tabs inherit a terminal rule. A cached ownership binding preserves exclusions during API fallback. Unchecking prunes queued work. Pausing clears queues, and an epoch guard prevents raced busy receipts from restoring canceled work. Every busy session still protects machine-wide routing, regardless of monitoring selection.
 
-Both the live plugin and shared-service fallback recognize the exact free-tier client-gate provider error as another recovery trigger, independent of HTTP status. Matching normalizes whitespace and curly apostrophes, requires a failed idle provider event, preserves the actual error and incident receipt key, and uses the existing monitoring and two-IP limits. Ordinary permission errors and assistant text do not qualify. The rebuilt native app and live presence report detected the user's exact error on Orchestrator as Needs recovery. Monitoring stayed paused; live IP rotation/continuation for this trigger remains unverified.
+Failed rate-limit/quota events and the specific OpenCode free-tier client-gate provider message can queue recovery. Recovery bounds relay attempts to five, waits up to 20 seconds per connection, requires a connected SoftEther account and changed public IPv4, and limits a session to two verified IP changes. Exact-session plugin requests, claimed receipts, and persisted incident guards avoid uncertain automatic resubmissions. Busy targets can wait on the already verified route.
 
-The monitoring/palette/trigger pass passed 9 Node and 31 Rust tests, the frontend build, and the updated NSIS installer build. Browser interactions verified terminal exclusions, session overrides, mixed state, keyboard Space toggling, project/source isolation, and saved-selection messaging while the master switch was paused. Inspected visible text met 4.5:1 contrast in session, relay, activity, and prompt views; disabled controls were excluded. Native accessibility confirmed the controls, live error, and excluded-session label; the saved settings file matched that exclusion. Native screenshot pixels were occluded by the foreground app, so visual verification for this pass uses the labeled browser preview. No live VPN change or continuation was triggered.
+The UI uses charcoal surfaces, neutral text/selections, the real green icon, and restrained lime for enabled actions, checks, and focus. Preview fixtures remain development-only. Background CLI helpers use Windows `CREATE_NO_WINDOW`.
 
-**Current focus:** verify exact-tab continuation during a real rate-limit event. Both Orca and outside clients report all tabs from the live CLI tab strip. The latest UI revision lists sessions directly beneath folder-marked project headings, omitting redundant terminal headings/counts while preserving terminal identity for routing. Idle, Working, Needs recovery, and unavailable status belong to each session; Selected tab is independent. On OpenCode 2.0.32, the updated plugin loaded into existing clients and reported both Vise tabs (Orchestrator and Graphify Implementor), both outside Thesis tabs, and the spectre-mail tab, all Idle at inspection. Vise's connected service is private and was reached through its existing SDK connection. No terminal restart, VPN change, or live prompt was used. Live inspection caught and corrected Orca identity mapping: `ORCA_PANE_KEY` is `tabId:leafId`, not the PTY ID.
+## Source map
 
-The simplified-heading and prompt revision passed the frontend build, 8 Node tests, 25 Rust tests, and the NSIS installer build. Browser checks confirmed folder icons for both sources, all six sample sessions, no terminal headings, the exact shortened default in the prompt editor, and no overflow at 1280 × 820 or 980 × 660. The UI detector returned no findings. The rebuilt native accessibility tree confirmed the shortened default and live Vise tabs directly under the project heading. Monitoring remained paused; no recovery prompt or VPN change was triggered.
-
-The recurring console popup was traced to background CLI launches without Windows console suppression. `src-tauri/src/process.rs` now applies `CREATE_NO_WINDOW` to every Orca/SoftEther helper. A Windows regression test launches PowerShell through that runner and verifies `GetConsoleWindow()` is zero while stdout remains captured. The latest test run passed 8 Node and 26 Rust tests. The frontend and NSIS installer rebuilt successfully, and the updated release was reopened with monitoring paused.
-
-The new transport uses exact session IDs through the connected CLI plugin for both sources. It does not type into whichever Orca tab is selected. Request claims, SDK receipts, and a persisted incident guard prevent automatic duplicate submissions after uncertain responses. Node tests cover independent tab states, background delivery, duplicate requests, busy/closed/expired clients, selection, disconnects, and cleanup. Rust tests cover lease parsing, canonical ownership, exact Orca identity, mocked request receipts, timeout cleanup, and retained closed incidents, alongside existing VPN/controller/API tests.
-
-This tab pass passed 8 Node and 24 Rust tests, the frontend build, and the NSIS installer build. Browser fixtures verified tab selection for both sources, the three-session Idle filter, and no page overflow at 1280 × 820, 980 × 660, and 390 × 844. Impeccable's detector returned no findings. The rebuilt release was also checked in unobstructed native screenshots: Thesis and Vise each displayed two live tabs with Idle status and separate selected/background labels; the sidebar total was five with no duplicate legacy terminal rows. Project navigation passed. Monitoring stayed paused throughout.
-
-The prior UI pass checked populated browser fixtures at 1280 × 820, the native minimum of 980 × 660, and 390px width. Session filters, project navigation, arrow-key selection, prompt saves, modal focus wrapping and Escape, relay sorting and preferences, searches, and activity filters passed. This discovery pass added browser checks for two outside project groups, multiple sessions per project, and separate Orca/outside scopes for the same directory. Native screenshots remain occluded by another foreground app, so accessibility confirmation is not recorded as an unobstructed visual check.
-
-The app uses a dark desktop split view: a sidebar for Sessions, VPN relays, Activity, Orca sessions, and Other sessions; a compact persistent route bar; project groups labeled by source; and a contextual inspector containing the error, prompt, and recovery action. Both session sections list projects directly; the separate Other sessions overview row was removed. The label change and outside project navigation passed the frontend build and a browser check at 1280 × 820. Windows path casing and separator differences share one group within each source. Relay preferences require an explicit inspector action. Activity has its own searchable view. Native modal prompt editing preserves drafts across controller updates and contains keyboard focus. Motion is limited to prompt surfaces, the monitoring switch, and press feedback; repeated navigation and data updates stay immediate. The native title bar uses the dark theme.
-
-The Impeccable readability pass preserves this layout and the requested sidebar headings. Shared fixed rem tokens in `src/styles.css` set 14px body/session text, 12px supporting text, and 20px primary headings at the default browser size; small badges use 11px. Secondary text has stronger contrast, selected rows use tinted supporting text, titles wrap to two lines with a full-title tooltip, and search, filtering, toggle, and action controls have larger targets. The inspector has more room, errors are clearer, and activity prose is limited to 75ch. Browser checks covered 1280 × 820, 980 × 660, and 390 × 844, with no page overflow. Computed text contrast in inspected session, relay, activity, and prompt states met 4.5:1; disabled controls were excluded. Sorting, filtering, empty search results, arrow-key selection, prompt focus, and Escape passed. The required Impeccable detector returned no findings for the changed frontend files. The frontend and updated NSIS installer build passed. Impeccable's loader treats the existing Windows desktop platform metadata as web; this pass used its web UI guidance for the Tauri frontend.
-
-For browser verification, `?preview=1` explicitly loads in-memory sample data during Vite development; `&empty=1` clears the fixtures. The preview never invokes the controller, and recovery, disconnection, and live refresh are disabled. Production assets were checked to contain no fixture identifiers or relay hostnames. Normal browser access reports that the desktop app is required.
-
-The desktop dev command now selects an available port from 1420 to 1499 and passes it to both Vite and Tauri. With an existing Vite process on 1420, a second desktop dev run launched on 1421 and served the app there. Direct `npm run dev` also falls back to the next available port.
-
-Read-only inspection of the local OpenCode service confirmed the expected `idle` / `failed` / `provider.quota` / HTTP 429 message shape. No live outside-session continuation has been sent by this app yet.
-
-## Where to look
-
-| Need | Canonical source |
+| Concern | Canonical source |
 | --- | --- |
-| User behavior and limitations | `README.md`, `PRODUCT.md` |
-| Milestones and verification | `docs/ROADMAP.md` |
-| Sidebar, session and relay inspectors, activity, prompt editor | `src/main.tsx`, `src/styles.css` |
-| Frontend contracts and development fixtures | `src/types.ts`, `src/dev-preview.ts`, `src/vite-env.d.ts` |
-| Monitoring rule precedence and UI icon | `src/monitoring.ts`, `src/assets/app-icon.png` (from `src-tauri/icons/128x128.png`) |
-| Desktop dev port handoff | `scripts/tauri.mjs`, `vite.config.ts`, `package.json` |
-| Polling, recovery, settings and history | `src-tauri/src/lib.rs` |
-| Shared-service API fallback | `src-tauri/src/opencode.rs` |
-| Orca terminal identity and selection | `src-tauri/src/orca.rs` |
-| Live tab leases, app-owned plugin install, request/receipt channel | `src-tauri/src/presence.rs`, `integrations/opencode/tui.js` |
-| Per-tab state, exact delivery, selection, and cleanup tests | `integrations/opencode/presence.test.mjs` |
-| Relay selection and VPN connection | `src-tauri/src/vpngate.rs`, `src-tauri/src/softether.rs` |
-| Hidden background CLI helpers and timeout/output handling | `src-tauri/src/process.rs` |
-| Commands and repository rules | `AGENTS.md`, `package.json`, `src-tauri/Cargo.toml` |
-| Frontend design guidance | `.agents/skills/apple-design/SKILL.md`, `.agents/skills/emil-design-eng/SKILL.md`, `.agents/skills/impeccable/SKILL.md`, `.agents/skills/find-animation-opportunities/SKILL.md` |
+| Setup, behavior, limitations, local data, removal | `README.md`, `docs/USAGE.md` |
+| Verified milestones and remaining live checks | `docs/ROADMAP.md` |
+| Development and publication checklist | `docs/DEVELOPMENT.md`, `docs/RELEASING.md`, `CHANGELOG.md` |
+| Workspace, inspectors, activity, prompt editor | `src/main.tsx`, `src/styles.css` |
+| Frontend contracts and monitoring presentation | `src/types.ts`, `src/monitoring.ts` |
+| Icon and isolated development fixtures | `src/assets/app-icon.png`, `src/dev-preview.ts`, `src/vite-env.d.ts` |
+| Desktop dev port handoff | `scripts/tauri.mjs`, `vite.config.ts` |
+| Polling, recovery queues, persistence, commands | `src-tauri/src/lib.rs` |
+| Settings and monitoring rule precedence | `src-tauri/src/models.rs` |
+| Shared-service fallback | `src-tauri/src/opencode.rs` |
+| Orca terminal identity and outer-terminal selection | `src-tauri/src/orca.rs` |
+| Live leases, plugin install, request/receipt bridge | `src-tauri/src/presence.rs`, `integrations/opencode/tui.js` |
+| Tab discovery and exact-delivery tests | `integrations/opencode/presence.test.mjs`; Rust tests beside source |
+| Relay parsing/ranking and SoftEther profiles | `src-tauri/src/vpngate.rs`, `src-tauri/src/softether.rs` |
+| Hidden helper processes and timeout handling | `src-tauri/src/process.rs` |
+| Version/fixture gate and release packaging | `scripts/check-release.mjs`, `scripts/release.mjs` |
+| Windows verification and artifact upload | `.github/workflows/windows.yml` |
+| Toolchain and dependency pins | `.node-version`, `rust-toolchain.toml`, `package-lock.json`, `src-tauri/Cargo.lock` |
+| Repository rules and frontend guidance | `AGENTS.md`, `.agents/skills/apple-design`, `.agents/skills/emil-design-eng`, `.agents/skills/impeccable` |
 
-## Important constraints
+## Integration constraints
 
-- OpenCode's `/api/session/active` reports executing drains, not idle terminal presence. V2 plugin reports contain every live client's open tabs, selected route, per-tab metadata and execution/error status. The shared API supplies a responding-session fallback. Saved global tab files, historical lists, and recency thresholds are not discovery sources. A previously observed failure stays visible after closure, but its delivery route is cleared until reopened. Without plugin presence, a response entirely between polls may be missed.
-- The CLI plugin is installed under OpenCode's global `plugins/opc-rotate-presence` directory without changing configuration or other plugins. Records in `~/.local/state/opc-rotate/presence` have client nonces, terminal/client IDs, connected server PID, tab metadata, busy IDs, and time; never credentials or prompt text. Leases expire after eight seconds. V2 reports support the client's connected shared or private service; legacy V1 reports still require the shared PID. Missing status is Unknown, never Idle.
-- Deduplicate ownership by exact session ID, preferring Orca, then selected ownership. Different sessions in one directory remain independent. Both sources display project → sessions, with folder icons and one session count per project. Terminal metadata remains available for routing. Selected/background tab labels do not imply working/idle state.
-- The default continuation is exactly “Continue from where you stopped after the rate limit”. Loading settings migrates only the previous built-in default; custom global prompts and per-session overrides are preserved.
-- Orca supplies existing terminal handles and worktree paths. Match `ORCA_PANE_KEY` to `tabId:leafId` from the CLI. Select the inner tab through the plugin and, when available, its outer terminal through Orca. Never launch or restart terminals for discovery.
-- `requests/<client-id>` and `receipts/<client-id>` beside presence form the local command channel. Requests expire, target a live exact session and service identity, and are removed on claim/timeout. Continuation text exists only in request files; receipt claims remain as the at-most-once journal. Closed, expired, replacement-client, and busy requests do not submit a prompt. Ambiguous responses are not retried. Recovery saves its incident guard before transport.
-- A live plugin reports all executing IDs even outside its tab strip. Unknown execution status or an Orca terminal awaiting the plugin blocks route changes. This replaces unreliable terminal-tail parsing.
-- SoftEther changes the machine's route. Touch only app-created profiles and wait for other responding sessions before rotation.
-- Prompt receipts and incident keys prevent duplicate continuation after ambiguous results.
-- A verified IP can leave a continuation queued while its target is busy. The queue retries delivery after idle without starting another VPN switch.
-- Local settings and connected VPN profiles are outside Git; never copy credentials or service passwords into documentation.
+- The live plugin reports all open tabs, selected route, service identity, and per-session execution/error state. The shared `/api/session/active` endpoint supplies a responding-session fallback, not idle presence. Unknown status must not become Idle.
+- V2 reports support shared and private connected clients through their existing SDK. Legacy V1 leases require the current shared PID. Do not discover arbitrary private endpoints or copy credentials.
+- Install only `opc-rotate-presence/tui.js` under OpenCode's plugin directory, respecting `OPENCODE_CONFIG_DIR`. Heartbeats refresh every two seconds and expire after eight seconds; presence contains no prompts or credentials.
+- Match Orca's `ORCA_PANE_KEY` to `tabId:leafId`, not the PTY ID. Deduplicate by exact session ID, preferring Orca ownership; never suppress an entire directory's outside sessions.
+- Address requests to a live exact session/client/service identity. Claim before submitting, persist the incident guard before transport, clean expired requests, and never retry an ambiguous receipt automatically. Do not type prompts into the currently selected terminal tab.
+- The exact built-in prompt is “Continue from where you stopped after the rate limit”. Migration replaces only the former built-in wording, preserving custom prompts.
+- SoftEther is separately installed. Control only `OPCRotate_` profiles and refuse an unrelated active account. Do not enable monitoring or perform a live VPN test just to inspect the UI.
+- Local settings, state, credentials, and generated release files stay outside Git. Source is MIT licensed; preserve third-party notices.
 
-Start with the user's request and this map, then inspect the directly affected source and tests. The roadmap records verified status; source code defines actual behavior.
+## Verification baseline and gaps
+
+The pre-release baseline passed **9 Node plugin tests and 31 Rust tests**, TypeScript/Vite build, and NSIS packaging. Windows helper coverage verifies no console handle while output is captured. Browser preview checks covered the requested project hierarchy, monitoring controls, keyboard behavior, empty states, desktop sizes, and inspected text contrast. Native checks confirmed live idle/background tabs and the free-tier provider error without triggering recovery.
+
+Earlier live VPN recovery used the former terminal-send transport. **Live continuation using the current exact-session bridge remains unverified**, including Orca, outside clients, and background tabs. Clean-PC install/upgrade/uninstall and IPv6 egress remain open. Signing and automatic updates are not configured. Use the release checklist rather than treating a successful installer build as end-to-end acceptance.
+
+The Windows workflow checks locked dependencies, versions, formatting, tests, npm audit, production fixture exclusion, and NSIS output. It uploads an installer/checksum artifact only; publication is a separate maintainer action.
