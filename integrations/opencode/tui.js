@@ -36,17 +36,22 @@ function openTabs(context) {
   return { ids: ids.slice(0, 128), current };
 }
 
-function limitError(message) {
+function recoveryError(message) {
   const error = message?.error;
-  if (
-    message?.type !== "idle" ||
-    message.outcome !== "failed" ||
-    error?.status !== 429
-  )
+  if (message?.type !== "idle" || message.outcome !== "failed" || !error)
     return null;
-  return error.type === "provider.rate-limit" ||
-    error.type === "provider.quota" ||
-    /rate limit/i.test(error.message ?? "")
+  const text = String(error.message ?? "")
+    .replaceAll("’", "'")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  const freeTierGate = text.includes(
+    "opencode's free tier can only be used from within opencode.",
+  );
+  return freeTierGate ||
+    (error.status === 429 &&
+      (error.type === "provider.rate-limit" ||
+        error.type === "provider.quota" ||
+        /rate limit/i.test(text)))
     ? String(error.message || "Rate limit exceeded").slice(0, 2000)
     : null;
 }
@@ -107,7 +112,7 @@ export default {
               const latest = (
                 Array.isArray(messages) ? messages : messages?.data
               )?.[0];
-              const error = active[sessionID] ? null : limitError(latest);
+              const error = active[sessionID] ? null : recoveryError(latest);
               return {
                 sessionID,
                 title: info.title || "Untitled session",

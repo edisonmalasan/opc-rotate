@@ -120,7 +120,7 @@ impl OpenCodeClient {
             let error = if active.contains(&id) {
                 None
             } else {
-                message.and_then(rate_limit_error)
+                message.and_then(recovery_error)
             };
             if !include_other_session(
                 live.contains(&id),
@@ -190,7 +190,7 @@ fn include_other_session(active: bool, previously_active: bool, rate_limited: bo
     active || (previously_active && rate_limited)
 }
 
-fn rate_limit_error(message: &Value) -> Option<String> {
+fn recovery_error(message: &Value) -> Option<String> {
     if message["type"].as_str() != Some("idle") || message["outcome"].as_str() != Some("failed") {
         return None;
     }
@@ -198,10 +198,19 @@ fn rate_limit_error(message: &Value) -> Option<String> {
     let status = error["status"].as_u64();
     let kind = error["type"].as_str().unwrap_or("");
     let text = error["message"].as_str().unwrap_or("");
-    if status == Some(429)
-        && (kind == "provider.rate-limit"
-            || kind == "provider.quota"
-            || text.to_ascii_lowercase().contains("rate limit"))
+    let normalized = text
+        .replace('’', "'")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    let free_tier_gate =
+        normalized.contains("opencode's free tier can only be used from within opencode.");
+    if free_tier_gate
+        || (status == Some(429)
+            && (kind == "provider.rate-limit"
+                || kind == "provider.quota"
+                || text.to_ascii_lowercase().contains("rate limit")))
     {
         Some(text.to_string())
     } else {
@@ -268,17 +277,40 @@ mod tests {
     }
 
     #[test]
+    fn free_tier_client_gate_triggers_recovery_only_from_failed_provider_events() {
+        let text = "OpenCode's free tier can only be used from within OpenCode. Download it at [https://opencode.ai](https://opencode.ai) and keep building.";
+        for status in [serde_json::json!(403), serde_json::Value::Null] {
+            let message = serde_json::json!({"type":"idle","outcome":"failed","error":{"type":"provider.unknown","status":status,"message":text}});
+            assert_eq!(recovery_error(&message).as_deref(), Some(text));
+        }
+        let wrapped = "OpenCode’s free tier can only be\nused from within OpenCode. Download it at https://opencode.ai";
+        assert!(recovery_error(
+            &serde_json::json!({"type":"idle","outcome":"failed","error":{"message":wrapped}})
+        )
+        .is_some());
+        assert!(
+            recovery_error(&serde_json::json!({"type":"assistant","error":{"message":text}}))
+                .is_none()
+        );
+        assert!(recovery_error(
+            &serde_json::json!({"type":"idle","outcome":"completed","error":{"message":text}})
+        )
+        .is_none());
+        assert!(recovery_error(&serde_json::json!({"type":"idle","outcome":"failed","error":{"status":403,"message":"Permission denied"}})).is_none());
+    }
+
+    #[test]
     fn detects_actual_failed_429_event() {
         let message = serde_json::json!({"type":"idle","outcome":"failed","error":{"type":"provider.quota","status":429,"message":"Rate limit exceeded"}});
         assert_eq!(
-            rate_limit_error(&message).as_deref(),
+            recovery_error(&message).as_deref(),
             Some("Rate limit exceeded")
         );
         assert!(
-            rate_limit_error(&serde_json::json!({"type":"assistant","error":{"status":429}}))
+            recovery_error(&serde_json::json!({"type":"assistant","error":{"status":429}}))
                 .is_none()
         );
-        assert!(rate_limit_error(&serde_json::json!({"type":"idle","outcome":"failed","error":{"status":500,"message":"server error"}})).is_none());
+        assert!(recovery_error(&serde_json::json!({"type":"idle","outcome":"failed","error":{"status":500,"message":"server error"}})).is_none());
     }
 
     #[tokio::test]

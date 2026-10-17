@@ -150,6 +150,44 @@ async function fixture(t) {
   };
 }
 
+test("the free-tier client gate is a recovery incident, while ordinary errors and assistant text are not", async (t) => {
+  const f = await fixture(t);
+  const text =
+    "OpenCode's free tier can only be used from within OpenCode. Download it at [https://opencode.ai](https://opencode.ai) and keep building.";
+  let latest = {
+    id: "gate-1",
+    type: "idle",
+    outcome: "failed",
+    error: { type: "provider.unknown", status: 403, message: text },
+  };
+  f.context.client.message.list = async ({ sessionID }) => ({
+    data: sessionID === "ses_failed" ? [latest] : [],
+  });
+  await f.tick(2000);
+  assert.equal(f.read().sessions[2].state, "rate-limited");
+  assert.equal(f.read().sessions[2].lastError, text);
+  assert.equal(f.read().sessions[2].errorKey, "api:ses_failed:gate-1");
+  latest = {
+    ...latest,
+    error: {
+      message:
+        "OpenCode’s free tier can only be\nused from within OpenCode. Download it at https://opencode.ai",
+    },
+  };
+  await f.tick(2000);
+  assert.equal(f.read().sessions[2].state, "rate-limited");
+  latest = { ...latest, type: "assistant" };
+  await f.tick(2000);
+  assert.equal(f.read().sessions[2].state, "idle");
+  latest = {
+    ...latest,
+    type: "idle",
+    error: { status: 403, message: "Permission denied" },
+  };
+  await f.tick(2000);
+  assert.equal(f.read().sessions[2].state, "idle");
+});
+
 test("reports every live tab with independent idle, working, failed, and selected states", async (t) => {
   const f = await fixture(t),
     data = f.read();
