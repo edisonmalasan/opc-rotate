@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_PROMPT: &str = "Continue from where you stopped after the rate limit. Check the current state and avoid repeating completed actions.";
+pub const DEFAULT_PROMPT: &str = "Continue from where you stopped after the rate limit";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +62,14 @@ pub struct Settings {
     pub preferred_server: Option<String>,
 }
 
+impl Settings {
+    pub fn migrate_default_prompt(&mut self) {
+        if self.global_prompt == "Continue from where you stopped after the rate limit. Check the current state and avoid repeating completed actions." {
+            self.global_prompt = DEFAULT_PROMPT.into();
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -71,6 +79,35 @@ impl Default for Settings {
             managed_profile: None,
             preferred_server: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_the_previous_default_without_replacing_custom_prompts() {
+        let mut settings = Settings {
+            global_prompt: "Continue from where you stopped after the rate limit. Check the current state and avoid repeating completed actions.".into(),
+            ..Settings::default()
+        };
+        settings.prompt_overrides.insert(
+            "api:session".into(),
+            "Check the current branch first".into(),
+        );
+        settings.migrate_default_prompt();
+        assert_eq!(
+            settings.global_prompt,
+            "Continue from where you stopped after the rate limit"
+        );
+        assert_eq!(
+            settings.prompt_overrides["api:session"],
+            "Check the current branch first"
+        );
+        settings.global_prompt = "Resume the documentation review".into();
+        settings.migrate_default_prompt();
+        assert_eq!(settings.global_prompt, "Resume the documentation review");
     }
 }
 

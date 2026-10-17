@@ -143,10 +143,11 @@ impl Controller {
             .unwrap_or_else(std::env::temp_dir)
             .join("opc-rotate")
             .join("settings.json");
-        let persisted: Persisted = std::fs::read_to_string(&settings_path)
+        let mut persisted: Persisted = std::fs::read_to_string(&settings_path)
             .ok()
             .and_then(|content| serde_json::from_str(&content).ok())
             .unwrap_or_default();
+        persisted.settings.migrate_default_prompt();
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(12))
             .build()

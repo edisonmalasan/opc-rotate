@@ -49,7 +49,7 @@ export type Snapshot = {
 };
 
 export const DEFAULT_PROMPT =
-  "Continue from where you stopped after the rate limit. Check the current state and avoid repeating completed actions.";
+  "Continue from where you stopped after the rate limit";
 
 export const EMPTY_SNAPSHOT: Snapshot = {
   monitoring: false,
