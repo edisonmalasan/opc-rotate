@@ -566,6 +566,9 @@ button:focus-visible {
   background: #14161b7d;
   border: 1px solid #ffffff04;
   border-radius: 7px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
 }
 .segmented-control button {
   display: inline-flex;
@@ -581,6 +584,7 @@ button:focus-visible {
   font-size: var(--font-caption);
   font-weight: 550;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 .segmented-control button.active {
   color: #e5e9f1;
@@ -695,6 +699,35 @@ button:focus-visible {
   background: transparent;
   text-align: left;
 }
+.terminal-group + .terminal-group {
+  margin-top: 8px;
+}
+.terminal-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 26px 7px;
+  color: var(--dim);
+  font-size: var(--font-caption);
+}
+.terminal-heading small {
+  margin-left: auto;
+  font-size: inherit;
+}
+.tab-context-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--dim);
+  font-size: var(--font-caption);
+}
+.tab-context-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .session-item.selected {
   background: #29384f;
   border-color: #8aaee94d;
@@ -781,6 +814,9 @@ button:focus-visible {
 }
 .session-state.busy i {
   background: #89ade5;
+}
+.session-state.unknown i {
+  background: var(--dim);
 }
 .session-item .session-state {
   width: var(--session-status-width);

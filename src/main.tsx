@@ -34,7 +34,7 @@ import {
 import "./styles.css";
 
 type View = "sessions" | "relays" | "activity";
-type SessionFilter = "all" | "limited" | "busy";
+type SessionFilter = "all" | "limited" | "busy" | "idle";
 type PromptEditor = { target: SessionTarget | null; instant: boolean };
 type RunCommand = (
   command: string,
@@ -91,7 +91,32 @@ function stateLabel(state: string) {
     ? "Needs recovery"
     : state === "busy"
       ? "Working"
-      : "Ready";
+      : state === "idle"
+        ? "Idle"
+        : state === "completed"
+          ? "Completed"
+          : "Status unavailable";
+}
+
+function groupTerminals(targets: SessionTarget[]) {
+  const groups = new Map<string, SessionTarget[]>();
+  for (const target of targets) {
+    const key = target.terminalId || "shared-service";
+    groups.set(key, [...(groups.get(key) ?? []), target]);
+  }
+  return [...groups.entries()];
+}
+
+function tabLabel(target: SessionTarget) {
+  return target.viaPlugin
+    ? !target.clientId
+      ? "Closed tab"
+      : target.selectedTab
+        ? "Selected tab"
+        : "Background tab"
+    : target.source === "orca"
+      ? "Waiting for tab plugin"
+      : "Shared service";
 }
 function countryName(country: string) {
   return country === "Korea Republic of" ? "South Korea" : country;
@@ -169,7 +194,7 @@ function SessionItem({
           {sessionTitle(target.title)}
         </strong>
         <small>
-          {target.source === "orca" ? "Orca terminal" : "OpenCode session"}
+          {tabLabel(target)}
           {target.promptOverride && (
             <>
               <span>·</span>Custom prompt
@@ -232,6 +257,26 @@ function SessionInspector({
           <StateLabel state={target.state} />
           <span>{target.source === "orca" ? "Orca terminal" : "OpenCode"}</span>
         </div>
+        {target.viaPlugin && (
+          <div className="tab-context-actions">
+            <span>{tabLabel(target)}</span>
+            <button
+              className="text-button"
+              disabled={
+                !target.clientId || target.selectedTab || pending !== null
+              }
+              onClick={() => run("select_session_tab", { targetId: target.id })}
+            >
+              {target.selectedTab ? (
+                <>
+                  <Check size={13} /> Selected
+                </>
+              ) : (
+                "Select tab"
+              )}
+            </button>
+          </div>
+        )}
         <section className="inspector-section">
           <h3>Project</h3>
           <div className="project-location">
@@ -274,7 +319,12 @@ function SessionInspector({
       <div className="inspector-bottom">
         <button
           className="primary-button full-width"
-          disabled={!canRecover || pending !== null}
+          disabled={
+            !canRecover ||
+            pending !== null ||
+            (target.viaPlugin && !target.clientId) ||
+            (target.source === "orca" && !target.clientId)
+          }
           onClick={() => run("recover_now", { targetId: target.id })}
         >
           {pending === "recover_now" ? (
@@ -725,7 +775,7 @@ function App() {
       (filter === "all" ||
         (filter === "limited"
           ? session.state === "rate-limited"
-          : session.state === "busy")) &&
+          : session.state === filter)) &&
       `${session.title} ${session.project}`
         .toLowerCase()
         .includes(search.toLowerCase()),
@@ -784,6 +834,21 @@ function App() {
           const update = (target: SessionTarget) =>
             target.id === args?.targetId
               ? { ...target, promptOverride: args?.prompt as string | null }
+              : target;
+          return {
+            ...current,
+            orcaSessions: current.orcaSessions.map(update),
+            otherSessions: current.otherSessions.map(update),
+          };
+        }
+        if (command === "select_session_tab") {
+          const selected = [
+            ...current.orcaSessions,
+            ...current.otherSessions,
+          ].find((target) => target.id === args?.targetId);
+          const update = (target: SessionTarget) =>
+            selected && target.terminalId === selected.terminalId
+              ? { ...target, selectedTab: target.id === selected.id }
               : target;
           return {
             ...current,
@@ -865,6 +930,7 @@ function App() {
     targets: SessionTarget[],
     other = false,
   ) {
+    const terminals = groupTerminals(targets);
     return (
       <section
         className="session-group"
@@ -876,19 +942,40 @@ function App() {
             {other ? <Terminal size={14} /> : <Folder size={14} />}
             <strong>{title}</strong>
             <em className="group-source">{other ? "OpenCode" : "Orca"}</em>
-            <span>{targets.length}</span>
+            <span>
+              {targets.length} {targets.length === 1 ? "session" : "sessions"}
+            </span>
           </span>
           <small title={subtitle}>
             {subtitle || "Project directory unavailable"}
           </small>
         </div>
-        {targets.map((target) => (
-          <SessionItem
-            key={target.id}
-            target={target}
-            selected={target.id === selectedId}
-            onSelect={() => selectSession(target.id)}
-          />
+        {terminals.map(([terminalId, tabs], index) => (
+          <div
+            className="terminal-group"
+            key={terminalId}
+            role="group"
+            aria-label={`${tabs[0].terminalTitle || "Shared service"} ${index + 1} · ${tabs.length} ${tabs.length === 1 ? "session" : "sessions"}`}
+          >
+            <div className="terminal-heading">
+              <Terminal size={13} />
+              <span>
+                {tabs[0].terminalTitle || "Shared service"}
+                {terminals.length > 1 ? ` ${index + 1}` : ""}
+              </span>
+              <small>
+                {tabs.length} {tabs.length === 1 ? "session" : "sessions"}
+              </small>
+            </div>
+            {tabs.map((target) => (
+              <SessionItem
+                key={target.id}
+                target={target}
+                selected={target.id === selectedId}
+                onSelect={() => selectSession(target.id)}
+              />
+            ))}
+          </div>
         ))}
       </section>
     );
@@ -1149,6 +1236,7 @@ function App() {
                     ["all", "All sessions"],
                     ["limited", "Needs recovery"],
                     ["busy", "Working"],
+                    ["idle", "Idle"],
                   ] as const
                 ).map(([value, label]) => (
                   <button
