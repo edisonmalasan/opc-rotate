@@ -16,7 +16,7 @@ pub struct VpnServer {
     pub score: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionTarget {
     pub id: String,
@@ -28,6 +28,20 @@ pub struct SessionTarget {
     pub error_key: Option<String>,
     pub prompt_override: Option<String>,
     pub updated_at: u64,
+    #[serde(default)]
+    pub terminal_id: Option<String>,
+    #[serde(default)]
+    pub terminal_title: Option<String>,
+    #[serde(default)]
+    pub selected_tab: bool,
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub orca_handle: Option<String>,
+    #[serde(default)]
+    pub via_plugin: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

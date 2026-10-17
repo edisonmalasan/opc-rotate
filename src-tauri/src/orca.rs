@@ -1,6 +1,5 @@
 use crate::models::SessionTarget;
 use crate::process::{now_ms, run};
-use futures::future::join_all;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -23,142 +22,48 @@ pub async fn list_targets() -> Result<Vec<SessionTarget>, String> {
     let terminals = value["result"]["terminals"]
         .as_array()
         .ok_or("Orca did not return a terminal list")?;
-    let candidates = terminals
+    Ok(terminals
         .iter()
-        .filter_map(|terminal| {
-            let agent = terminal["agentIdentity"].as_str().unwrap_or("");
-            if agent.starts_with("opencode") && terminal["orphaned"].as_bool() != Some(true) {
-                Some(terminal.clone())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-    let errors = join_all(candidates.iter().map(|terminal| async move {
-        let handle = terminal["handle"].as_str().unwrap_or("");
-        read_error(handle).await
-    }))
-    .await;
-    let mut targets = Vec::new();
-    for (terminal, read_result) in candidates.iter().zip(errors) {
-        let Some(handle) = terminal["handle"].as_str() else {
-            continue;
-        };
-        let preview = terminal["preview"].as_str().unwrap_or("");
-        let error = match read_result {
-            Ok(error) => error,
-            Err(_) => contains_rate_limit(preview).then(|| "Rate limit exceeded".into()),
-        };
-        let updated_at = terminal["lastOutputAt"].as_u64().unwrap_or_else(now_ms);
-        targets.push(SessionTarget {
-            id: format!("orca:{handle}"),
-            source: "orca".into(),
-            title: terminal["title"]
+        .filter(|terminal| {
+            terminal["agentIdentity"]
                 .as_str()
-                .unwrap_or("OpenCode terminal")
-                .into(),
-            project: terminal["worktreePath"].as_str().unwrap_or("").into(),
-            state: if error.is_some() {
-                "rate-limited"
-            } else {
-                "idle"
-            }
-            .into(),
-            last_error: error.clone(),
-            error_key: error.map(|_| format!("orca:{handle}:{updated_at}")),
-            prompt_override: None,
-            updated_at,
-        });
+                .unwrap_or("")
+                .starts_with("opencode")
+                && terminal["orphaned"].as_bool() != Some(true)
+        })
+        .filter_map(|terminal| {
+            let handle = terminal["handle"].as_str()?;
+            Some(SessionTarget {
+                id: format!("orca:{handle}"),
+                source: "orca".into(),
+                title: terminal["title"]
+                    .as_str()
+                    .unwrap_or("OpenCode terminal")
+                    .into(),
+                project: terminal["worktreePath"].as_str().unwrap_or("").into(),
+                state: "unknown".into(),
+                updated_at: terminal["lastOutputAt"].as_u64().unwrap_or_else(now_ms),
+                terminal_id: pane_key(terminal),
+                terminal_title: Some("Orca terminal".into()),
+                orca_handle: Some(handle.into()),
+                ..Default::default()
+            })
+        })
+        .collect())
+}
+
+fn pane_key(terminal: &Value) -> Option<String> {
+    // ORCA_PANE_KEY identifies the UI tab and leaf, not the underlying PTY ID.
+    match (terminal["tabId"].as_str(), terminal["leafId"].as_str()) {
+        (Some(tab), Some(leaf)) => Some(format!("{tab}:{leaf}")),
+        _ => terminal["ptyId"].as_str().map(str::to_string),
     }
-    Ok(targets)
 }
 
-fn contains_rate_limit(text: &str) -> bool {
-    text.to_ascii_lowercase()
-        .contains("error: rate limit exceeded")
-}
-
-async fn read_error(handle: &str) -> Result<Option<String>, String> {
-    let value = cli(
-        &[
-            "terminal",
-            "read",
-            "--terminal",
-            handle,
-            "--limit",
-            "1200",
-            "--json",
-        ],
-        25,
-    )
-    .await?;
-    let lines = value["result"]["terminal"]["tail"]
-        .as_array()
-        .ok_or("Orca did not return terminal output")?;
-    Ok(lines
-        .iter()
-        .rev()
-        .take(12)
-        .filter_map(Value::as_str)
-        .find(|line| contains_rate_limit(line))
-        .map(str::trim)
-        .map(str::to_string))
-}
-
-pub async fn is_idle(handle: &str) -> Result<bool, String> {
-    let value = cli(
-        &[
-            "terminal",
-            "wait",
-            "--terminal",
-            handle,
-            "--for",
-            "tui-idle",
-            "--timeout-ms",
-            "1000",
-            "--json",
-        ],
-        12,
-    )
-    .await?;
-    Ok(value["result"]["wait"]["satisfied"].as_bool() == Some(true))
-}
-
-pub async fn send_prompt(handle: &str, prompt: &str) -> Result<String, String> {
-    let value = cli(
-        &[
-            "terminal",
-            "send",
-            "--terminal",
-            handle,
-            "--text",
-            prompt,
-            "--enter",
-            "--wait-submit",
-            "10",
-            "--json",
-        ],
-        25,
-    )
-    .await?;
-    if !receipt_accepted(&value) {
-        return Err("Orca did not confirm that the prompt was accepted".into());
-    }
-    let request_id = value
-        .pointer("/result/requestId")
-        .or_else(|| value.pointer("/result/receipt/requestId"))
-        .and_then(Value::as_str)
-        .unwrap_or("accepted");
-    Ok(request_id.into())
-}
-
-fn receipt_accepted(value: &Value) -> bool {
-    value.pointer("/result/accepted").and_then(Value::as_bool) == Some(true)
-        || value
-            .pointer("/result/receipt/accepted")
-            .and_then(Value::as_bool)
-            == Some(true)
-        || value.to_string().contains("\"accepted\":true")
+pub async fn select_terminal(handle: &str) -> Result<(), String> {
+    cli(&["terminal", "switch", "--terminal", handle, "--json"], 12)
+        .await
+        .map(|_| ())
 }
 
 #[cfg(test)]
@@ -166,20 +71,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_explicit_rate_limit_errors_trigger() {
-        assert!(contains_rate_limit(
-            "Error: Rate limit exceeded. Please try again later."
-        ));
-        assert!(!contains_rate_limit("Discuss rate limit handling in docs"));
-    }
-
-    #[test]
-    fn accepted_receipts_are_detected() {
-        assert!(receipt_accepted(
-            &serde_json::json!({"result":{"accepted":true}})
-        ));
-        assert!(!receipt_accepted(
-            &serde_json::json!({"result":{"accepted":false}})
-        ));
+    fn cli_terminal_identity_matches_the_live_plugin_pane_key() {
+        let terminal = serde_json::json!({
+            "tabId": "6d01237e-d23c-4671-b2f4-8576320ab5c1",
+            "leafId": "10095741-f45c-4fec-ae78-cbc31b36dcfe",
+            "ptyId": "worktree::directory@@pty"
+        });
+        assert_eq!(
+            pane_key(&terminal).as_deref(),
+            Some("6d01237e-d23c-4671-b2f4-8576320ab5c1:10095741-f45c-4fec-ae78-cbc31b36dcfe")
+        );
+        assert_eq!(
+            pane_key(&serde_json::json!({"ptyId":"legacy"})).as_deref(),
+            Some("legacy")
+        );
+        assert!(pane_key(&serde_json::json!({})).is_none());
     }
 }

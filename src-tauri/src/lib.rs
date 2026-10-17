@@ -270,52 +270,57 @@ async fn refresh_catalog(app: &AppHandle, controller: &Arc<Controller>) -> Resul
 }
 
 async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
+    let plugin_error = presence::install().err();
+    let client = opencode::OpenCodeClient::discover(controller.http.clone());
+    let mut live =
+        presence::discover(client.as_ref().map(|c| c.service_pid).unwrap_or(0)).unwrap_or_default();
     let orca_result = orca::list_targets().await;
-    let orca_targets = orca_result.as_ref().cloned().unwrap_or_default();
+    let orca_targets = presence::merge_orca(&mut live, orca_result.as_deref().unwrap_or(&[]));
     let previously_active = controller
         .inner
         .lock()
         .await
         .previously_active_other
         .clone();
-    let plugin_error = presence::install().err();
-    let (api_result, setup_notice) = match opencode::OpenCodeClient::discover(
-        controller.http.clone(),
-    ) {
-        Ok(client) => match presence::discover(client.service_pid) {
-            Ok(presence) => {
-                let notice = plugin_error.or_else(|| (presence.clients == 0).then(||
-                    "Idle terminals appear after OpenCode loads the local presence plugin. If an open terminal is missing, reopen that OpenCode client once. opencode --auto is supported.".into()));
-                (
-                    client.list_targets(&presence, &previously_active).await,
-                    notice,
-                )
-            }
-            Err(error) => (Err(error), None),
-        },
-        Err(e) => (Err(e), plugin_error),
+    let api_result = match client {
+        Ok(client) => client.list_targets(&live, &previously_active).await,
+        Err(error) => Err(error),
     };
-    let other_targets = api_result.as_ref().cloned().unwrap_or_default();
+    let mut other_targets = live
+        .targets
+        .iter()
+        .filter(|t| t.source == "other")
+        .cloned()
+        .collect::<Vec<_>>();
+    other_targets.extend(api_result.as_ref().cloned().unwrap_or_default());
+    let notice = plugin_error.or_else(|| {
+        if live.targets.is_empty() { api_result.as_ref().err().cloned().or_else(|| Some(
+            "OpenCode tabs appear after the local presence plugin loads. If an open client is missing, reopen it once.".into()))
+        } else { None }
+    });
     let new_incidents = {
         let mut inner = controller.inner.lock().await;
-        inner.other_sessions_notice = api_result.as_ref().err().cloned().or(setup_notice);
-        if orca_result.is_ok() {
-            inner.orca_sessions = orca_targets;
-        }
-        if api_result.is_ok() {
-            inner.other_sessions = other_targets;
-            inner.previously_active_other = inner
-                .other_sessions
-                .iter()
-                .filter(|target| target.state == "busy" || target.state == "rate-limited")
-                .filter_map(|target| target.id.strip_prefix("api:").map(str::to_string))
-                .collect();
-        } else {
-            // A dead or restarted service must not leave old busy/idle rows looking live.
-            inner
-                .other_sessions
-                .retain(|target| target.state == "rate-limited");
-        }
+        inner.other_sessions_notice = notice;
+        inner.orca_sessions = retain_incidents(&inner.orca_sessions, orca_targets);
+        inner.other_sessions = retain_incidents(&inner.other_sessions, other_targets);
+        inner.previously_active_other = inner
+            .other_sessions
+            .iter()
+            .filter(|t| !t.via_plugin && (t.state == "busy" || t.state == "rate-limited"))
+            .filter_map(|t| t.id.strip_prefix("api:").map(str::to_string))
+            .collect();
+        let available = inner
+            .orca_sessions
+            .iter()
+            .chain(inner.other_sessions.iter())
+            .filter(|t| {
+                (!t.via_plugin || t.client_id.is_some())
+                    && (t.source != "orca" || t.client_id.is_some())
+            })
+            .map(|t| t.id.clone())
+            .collect::<HashSet<_>>();
+        inner.pending.retain(|id| available.contains(id));
+        inner.ready_to_resume.retain(|id| available.contains(id));
         let overrides = inner.settings.prompt_overrides.clone();
         for target in inner.orca_sessions.iter_mut() {
             target.prompt_override = overrides.get(&target.id).cloned();
@@ -353,6 +358,11 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
                 inner.ip_attempts.remove(&target.id);
                 inner.last_recovery_at.remove(&target.id);
             }
+            continue;
+        }
+        if (target.via_plugin && target.client_id.is_none())
+            || (target.source == "orca" && !target.via_plugin)
+        {
             continue;
         }
         let Some(key) = &target.error_key else {
@@ -626,24 +636,48 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
     Err("All five VPN Gate connection candidates failed".into())
 }
 
-async fn busy_session_count(controller: &Arc<Controller>) -> Result<usize, String> {
-    let mut busy = match opencode::OpenCodeClient::discover(controller.http.clone()) {
-        Ok(client) => client.active_ids().await?.len(),
-        Err(error) if error == "OpenCode shared service is not running" => 0,
-        Err(error) => return Err(error),
-    };
-    let orca_targets = controller.inner.lock().await.orca_sessions.clone();
-    for target in orca_targets {
-        let handle = target.id.trim_start_matches("orca:");
-        if !orca::is_idle(handle).await? {
-            busy += 1;
+fn retain_incidents(
+    previous: &[SessionTarget],
+    mut fresh: Vec<SessionTarget>,
+) -> Vec<SessionTarget> {
+    for target in previous.iter().filter(|t| t.state == "rate-limited") {
+        if !fresh.iter().any(|t| t.id == target.id) {
+            let mut closed = target.clone();
+            if closed.via_plugin {
+                closed.client_id = None;
+                closed.selected_tab = false;
+            }
+            fresh.push(closed);
         }
+    }
+    fresh
+}
+
+async fn busy_session_count(controller: &Arc<Controller>) -> Result<usize, String> {
+    let live = presence::discover(0)?;
+    if live.unknown_clients {
+        return Err("Waiting for OpenCode execution status before changing VPN".into());
+    }
+    let mut busy = live.busy.len();
+    match opencode::OpenCodeClient::discover(controller.http.clone()) {
+        Ok(client) => busy += client.active_ids().await?.len(),
+        Err(error) if error == "OpenCode shared service is not running" => {}
+        Err(error) => return Err(error),
+    }
+    let orca_targets = controller.inner.lock().await.orca_sessions.clone();
+    if orca_targets
+        .iter()
+        .any(|target| !target.via_plugin && target.client_id.is_none())
+    {
+        return Err(
+            "Waiting for the OpenCode tab plugin in every Orca terminal before changing VPN".into(),
+        );
     }
     Ok(busy)
 }
 
 enum ResumeChannel {
-    Orca(String),
+    Bridge,
     Api(opencode::OpenCodeClient, String),
 }
 
@@ -666,17 +700,26 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
             inner.ready_to_resume.remove(id);
             continue;
         };
-        let channel: Result<Option<ResumeChannel>, String> = if target.source == "orca" {
-            let handle = id.trim_start_matches("orca:");
-            orca::is_idle(handle)
-                .await
-                .map(|idle| idle.then(|| ResumeChannel::Orca(handle.to_string())))
+        let channel: Result<Option<ResumeChannel>, String> = if target.via_plugin {
+            presence::discover(0).and_then(|live| {
+                let fresh = live
+                    .targets
+                    .iter()
+                    .find(|t| t.id == target.id)
+                    .ok_or("The OpenCode tab is no longer open")?;
+                if fresh.state == "unknown" {
+                    return Err("OpenCode status is unavailable".into());
+                }
+                Ok((fresh.state != "busy").then_some(ResumeChannel::Bridge))
+            })
+        } else if target.source == "orca" {
+            Err("The OpenCode tab plugin is required to address this session".into())
         } else {
             let session_id = id.trim_start_matches("api:");
             match opencode::OpenCodeClient::discover(controller.http.clone()) {
                 Ok(client) => client.active_ids().await.map(|active| {
                     (!active.contains(session_id))
-                        .then(|| ResumeChannel::Api(client, session_id.to_string()))
+                        .then(|| ResumeChannel::Api(client, session_id.into()))
                 }),
                 Err(error) => Err(error),
             }
@@ -704,12 +747,27 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
             inner.pending.remove(id);
             inner.ready_to_resume.remove(id);
         }
+        controller.save().await;
         let result = match channel {
-            ResumeChannel::Orca(handle) => orca::send_prompt(&handle, &prompt).await,
-            ResumeChannel::Api(client, session_id) => client.prompt(&session_id, &prompt).await,
+            ResumeChannel::Bridge => presence::command(&target, "prompt", Some(&prompt)).await,
+            ResumeChannel::Api(client, session_id) => client
+                .prompt(&session_id, &prompt)
+                .await
+                .map(presence::Delivery::Accepted),
         };
         match result {
-            Ok(receipt) => {
+            Ok(presence::Delivery::Busy) => {
+                let mut inner = controller.inner.lock().await;
+                if let Some(key) = &target.error_key {
+                    inner.handled.remove(key);
+                }
+                inner.pending.insert(id.clone());
+                inner.ready_to_resume.insert(id.clone());
+                drop(inner);
+                controller.save().await;
+                continue;
+            }
+            Ok(presence::Delivery::Accepted(receipt)) => {
                 controller
                     .inner
                     .lock()
@@ -881,6 +939,41 @@ async fn set_preferred_server(
 }
 
 #[tauri::command]
+async fn select_session_tab(
+    app: AppHandle,
+    state: State<'_, Arc<Controller>>,
+    target_id: String,
+) -> Result<Snapshot, String> {
+    let target = state
+        .inner
+        .lock()
+        .await
+        .target(&target_id)
+        .ok_or("Session was not found")?;
+    match presence::command(&target, "focus", None).await? {
+        presence::Delivery::Accepted(_) => {
+            if let Some(handle) = target.orca_handle.as_deref() {
+                orca::select_terminal(handle).await?;
+            }
+            let mut inner = state.inner.lock().await;
+            for item in inner.orca_sessions.iter_mut() {
+                if item.terminal_id == target.terminal_id {
+                    item.selected_tab = item.id == target.id;
+                }
+            }
+            for item in inner.other_sessions.iter_mut() {
+                if item.terminal_id == target.terminal_id {
+                    item.selected_tab = item.id == target.id;
+                }
+            }
+        }
+        presence::Delivery::Busy => return Err("OpenCode could not select this tab".into()),
+    }
+    state.emit(&app).await;
+    Ok(state.snapshot().await)
+}
+
+#[tauri::command]
 async fn recover_now(
     app: AppHandle,
     state: State<'_, Arc<Controller>>,
@@ -888,8 +981,15 @@ async fn recover_now(
 ) -> Result<Snapshot, String> {
     {
         let mut inner = state.inner.lock().await;
-        if inner.target(&target_id).is_none() {
-            return Err("Session was not found".into());
+        let target = inner.target(&target_id).ok_or("Session was not found")?;
+        if (target.via_plugin && target.client_id.is_none())
+            || (target.source == "orca" && !target.via_plugin)
+            || target.state == "unknown"
+        {
+            return Err(
+                "Open this session in a client with the Recovery tab plugin before recovering"
+                    .into(),
+            );
         }
         inner.pending.insert(target_id);
     }
@@ -942,6 +1042,7 @@ pub fn run() {
             set_prompt_override,
             set_preferred_server,
             recover_now,
+            select_session_tab,
             disconnect_vpn
         ])
         .run(tauri::generate_context!())
@@ -963,6 +1064,9 @@ mod tests {
             error_key: key.map(str::to_string),
             prompt_override: None,
             updated_at: 0,
+            via_plugin: source == "orca",
+            client_id: (source == "orca").then(|| "test-client".into()),
+            ..Default::default()
         }
     }
 
@@ -991,6 +1095,19 @@ mod tests {
             last_recovery_at: HashMap::new(),
             recovery_running: false,
         }
+    }
+
+    #[test]
+    fn closed_tab_incidents_stay_visible_without_a_delivery_route() {
+        let mut previous = target("api:one", "orca", "rate-limited", Some("failure"));
+        previous.selected_tab = true;
+        let closed = retain_incidents(&[previous], vec![]);
+        assert_eq!(closed.len(), 1);
+        assert!(closed[0].client_id.is_none());
+        assert!(!closed[0].selected_tab);
+        let mut state = inner();
+        state.orca_sessions = closed;
+        assert!(queue_incidents(&mut state).is_empty());
     }
 
     #[test]

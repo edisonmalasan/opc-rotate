@@ -20,6 +20,13 @@ export type SessionTarget = {
   errorKey: string | null;
   promptOverride: string | null;
   updatedAt: number;
+  terminalId?: string | null;
+  terminalTitle?: string | null;
+  selectedTab?: boolean;
+  clientId?: string | null;
+  sessionId?: string | null;
+  orcaHandle?: string | null;
+  viaPlugin?: boolean;
 };
 
 export type HistoryEntry = { at: number; level: string; message: string };

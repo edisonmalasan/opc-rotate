@@ -93,7 +93,12 @@ impl OpenCodeClient {
         ids.extend(previously_active_ids);
         let mut targets = Vec::new();
         for id in ids {
-            if presence.orca.contains(&id) {
+            if presence.orca.contains(&id)
+                || presence
+                    .targets
+                    .iter()
+                    .any(|target| target.session_id.as_deref() == Some(id.as_str()))
+            {
                 continue;
             }
             let session = match self.get(&format!("/api/session/{id}")).await {
@@ -148,6 +153,8 @@ impl OpenCodeClient {
                 error_key,
                 prompt_override: None,
                 updated_at,
+                session_id: Some(id),
+                ..Default::default()
             });
         }
         Ok(targets)
@@ -358,11 +365,10 @@ mod tests {
             password: "test-password".into(),
             service_pid: 10,
         };
-        let presence = crate::presence::Presence {
-            open: HashSet::from(["outside".into()]),
-            orca: HashSet::from(["orca-owned".into()]),
-            clients: 1,
-        };
+        let mut presence = crate::presence::Presence::default();
+        presence.open = HashSet::from(["outside".into()]);
+        presence.orca = HashSet::from(["orca-owned".into()]);
+        presence.clients = 1;
         let targets = client
             .list_targets(&presence, &HashSet::new())
             .await
