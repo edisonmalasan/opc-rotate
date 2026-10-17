@@ -6,6 +6,8 @@
 
 **Current focus:** verify the updated project groups visually in the native window and observe outside-session continuation during a real rate-limit event. Live-session filtering and the per-project layout are implemented; 17 Rust tests, the frontend build, and the updated NSIS installer build pass. An Orca live recovery succeeded earlier. Native screenshot capture was covered by another fullscreen application.
 
+Read-only inspection of the local OpenCode service confirmed the expected `idle` / `failed` / `provider.quota` / HTTP 429 message shape. No live outside-session continuation has been sent by this app yet.
+
 ## Where to look
 
 | Need | Canonical source |

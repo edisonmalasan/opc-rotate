@@ -23,7 +23,7 @@ Outcome: a source build and installer work on the target Windows setup.
 - [x] Pass the Rust test suite (`npm test`, 17 tests at the last verified run).
 - [x] Build the updated NSIS installer with `npm run tauri -- build` after active-session filtering, Orca grouping, and queued-delivery changes.
 - [ ] Visually verify the updated project groups in the native window. The capture during this pass was covered by another fullscreen application.
-- [ ] Verify outside OpenCode session continuation during a real rate-limit event. Existing live evidence covers Orca; outside-session submission has mock API coverage only.
+- [ ] Verify outside OpenCode session continuation during a real rate-limit event. The local shared service has real failed `provider.quota` messages with status 429 and matches the parser; outside-session prompt submission has mock API coverage only.
 
 ## Deferred
 
