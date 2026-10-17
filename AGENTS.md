@@ -10,14 +10,15 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 
 | Concern | Source |
 | --- | --- |
-| Dashboard and styles | `src/main.tsx`, `src/styles.css` |
+| Sidebar, session inspector, relay and activity views | `src/main.tsx`, `src/styles.css` |
+| Development-only sample data | `src/dev-preview.ts` (`?preview=1`, never a live controller) |
 | Dev server port selection | `scripts/tauri.mjs`, `vite.config.ts` |
 | State, polling, incident queue, recovery | `src-tauri/src/lib.rs` |
 | OpenCode shared service | `src-tauri/src/opencode.rs` |
 | Orca terminals | `src-tauri/src/orca.rs` |
 | VPN Gate CSV and ranking | `src-tauri/src/vpngate.rs` |
 | SoftEther profile lifecycle | `src-tauri/src/softether.rs` |
-| UI data contracts | `src-tauri/src/models.rs` |
+| UI data contracts | `src/types.ts`, `src-tauri/src/models.rs` |
 | Product intent | `PRODUCT.md`, `docs/ROADMAP.md` |
 
 ## Stack and commands
@@ -36,6 +37,7 @@ npm run tauri -- build
 
 `npm run build` includes TypeScript checking. `npm test` runs Rust tests. The Tauri build creates an NSIS installer under `src-tauri/target/release/bundle/nsis/`.
 `npm run tauri -- dev` selects an available port from 1420 to 1499 and passes it to both Vite and Tauri; use this command for desktop development when 1420 may be occupied.
+For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty=1` for empty states. Preview edits are local to the page, and fixture data is excluded from release builds. Keep sample data clearly labeled and isolated from live recovery.
 
 ## Boundaries
 
