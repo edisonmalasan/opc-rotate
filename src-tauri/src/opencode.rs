@@ -274,12 +274,48 @@ mod tests {
         );
     }
 
-    #[test]
-    fn shows_live_sessions_and_incidents_from_observed_work_only() {
-        assert!(include_other_session(true, false, false));
-        assert!(include_other_session(false, true, true));
-        assert!(!include_other_session(false, false, true));
-        assert!(!include_other_session(false, true, false));
+    #[tokio::test]
+    async fn excludes_history_but_keeps_an_observed_rate_limit() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for _ in 0..4 {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 4096];
+                let count = socket.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]);
+                let body = if request.starts_with("GET /api/session?") {
+                    r#"{"data":[{"id":"live","title":"Live","location":{"directory":"C:/live"},"time":{"updated":100}},{"id":"failed","title":"Failed","location":{"directory":"C:/failed"},"time":{"updated":101}},{"id":"old","title":"Old","location":{"directory":"C:/old"},"time":{"updated":102}}]}"#
+                } else if request.starts_with("GET /api/session/active ") {
+                    r#"{"data":{"live":{}}}"#
+                } else if request.starts_with("GET /api/session/failed/message?") {
+                    r#"{"data":[{"id":"failure-1","type":"idle","outcome":"failed","error":{"type":"provider.rate-limit","status":429,"message":"Rate limit exceeded"}}]}"#
+                } else {
+                    r#"{"data":[]}"#
+                };
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                socket.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        let client = OpenCodeClient {
+            http: reqwest::Client::new(),
+            base: Url::parse(&format!("http://{address}/")).unwrap(),
+            password: "test-password".into(),
+        };
+        let targets = client
+            .list_targets(&[], &HashSet::from(["failed".to_string()]))
+            .await
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].id, "api:live");
+        assert_eq!(targets[0].state, "busy");
+        assert_eq!(targets[1].id, "api:failed");
+        assert_eq!(targets[1].state, "rate-limited");
+        assert_eq!(
+            targets[1].error_key.as_deref(),
+            Some("api:failed:failure-1")
+        );
     }
 
     #[tokio::test]
