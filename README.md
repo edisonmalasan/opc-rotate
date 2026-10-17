@@ -29,7 +29,7 @@ The installer is written under `src-tauri/target/release/bundle/nsis/`.
 
 ## How it works
 
-The sidebar separates **Sessions**, **VPN relays**, and **Activity**. **Orca projects** and **Other projects** each have project entries and matching session groups. **Other sessions** shows all outside work from the shared service. A project can appear in both sections when separate terminals use the same directory. Search or filter the list, then select a session to inspect its error, edit its continuation prompt, or choose **Recover session**. Up and Down arrow keys move between session rows.
+The sidebar separates **Sessions**, **VPN relays**, and **Activity**. **Orca sessions** and **Other sessions** list projects directly, with matching groups in the session list. Choose a project to filter its sessions, or **Sessions** to see all work. A project can appear in both sections when separate terminals use the same directory. Search or filter the list, then select a session to inspect its error, edit its continuation prompt, or choose **Recover session**. Up and Down arrow keys move between session rows.
 
 Monitoring starts **off**. Turn on the **Monitoring** switch in the toolbar when ready. The compact route bar stays visible across all views. In **VPN relays**, use **Refresh list** to fetch servers immediately, sort by recommendation, ping, or line speed, then select a relay to review its details. **Prioritize this relay** makes it the first candidate for the next recovery; **Use automatic selection** removes that preference. The list also refreshes automatically every five minutes. **Activity** records connection changes, prompt receipts, and errors.
 
