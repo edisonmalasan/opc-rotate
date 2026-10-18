@@ -12,6 +12,8 @@ Failed rate-limit/quota events and the specific OpenCode free-tier client-gate p
 
 The UI uses charcoal surfaces, neutral text/selections, the real green icon, and restrained lime for enabled actions, checks, and focus. Preview fixtures remain development-only. Background CLI helpers use Windows `CREATE_NO_WINDOW`.
 
+Per-session recovery progress is exposed as `Snapshot.recovery`, separate from OpenCode activity/selected-tab state. The controller reports queue/wait/connect/verify/send/receipt/stop stages, details, verified IP-change count, and timing. The 30-second Orca gate starts at a confirmed send receipt and is a minimum, not a fixed retry interval; outside sessions have no such gate. The UI uses a spinner only for active connection/delivery work, a static clock for waits, and a retry-eligibility countdown. Exclusions/pause clear queued indicators; ambiguous receipts never appear as success. Persisted attempt counts remain visible after restart; transient stage details are not persisted.
+
 ## Source map
 
 | Concern | Canonical source |
@@ -48,6 +50,8 @@ The UI uses charcoal surfaces, neutral text/selections, the real green icon, and
 - Local settings, state, credentials, and generated release files stay outside Git. Source is MIT licensed; preserve third-party notices.
 
 ## Verification baseline and gaps
+
+The recovery-progress update passed **9 Node and 34 Rust tests**, the production frontend build, NSIS packaging, and the release fixture-exclusion check. New tests cover the Orca send-based minimum delay, outside-source timing, per-session progress/counts, exclusion cleanup, saved limits, and stable stage timestamps. Browser UI verification was blocked by the browser tool's URL policy; no visual or live VPN check is claimed for these indicators.
 
 The pre-release baseline passed **9 Node plugin tests and 31 Rust tests**, TypeScript/Vite build, and NSIS packaging. Windows helper coverage verifies no console handle while output is captured. Browser preview checks covered the requested project hierarchy, monitoring controls, keyboard behavior, empty states, desktop sizes, and inspected text contrast. Native checks confirmed live idle/background tabs and the free-tier provider error without triggering recovery.
 

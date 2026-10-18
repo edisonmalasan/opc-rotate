@@ -18,6 +18,7 @@ Installers will be listed under [GitHub Releases](https://github.com/edisonmalas
 
 - Shows live tabs from Orca and other terminals beneath project folders, including idle and background sessions.
 - Saves monitoring choices per session or terminal, with editable continuation prompts.
+- Shows each session's recovery stage, retry eligibility, verified IP-change count, and last confirmed prompt time.
 - Ranks VPN Gate relays by ping and advertised speed, then controls the separately installed SoftEther client.
 - Waits for detected work to become idle, verifies a changed public IPv4 address, and addresses continuation to the exact affected session.
 - Bounds relay attempts and IP changes, records activity, and avoids automatically repeating uncertain prompt submissions.

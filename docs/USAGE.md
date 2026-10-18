@@ -45,6 +45,16 @@ The default continuation prompt is:
 
 Edit it with **Continuation prompt** in the sidebar, or set a session override in its inspector. Custom prompts survive updates.
 
+### Retry timing and per-session progress
+
+The **30-second Orca delay is a minimum after a confirmed continuation receipt**, not a fixed interval after an error. Outside sessions do not have this delay. Discovery/polling, other busy work, relay failures, profile cleanup, and public-IP checks can extend the gap. OpenCode's terminal duration labels are not a recovery event timeline.
+
+Each affected row shows its recovery stage alongside its OpenCode activity: queued, waiting for work, connecting, verifying IP, waiting for idle, sending a prompt, prompt sent, or stopped/uncertain. Active connection and delivery stages use a small spinner; waiting stages use a static clock. Reduced motion keeps the stage text without continuous rotation. Only sessions in that recovery show progress; unrelated sessions retain their normal activity status.
+
+The session inspector's **Recovery progress** section shows the controller's current explanation, the verified IP-change count, stage start time, and last confirmed prompt time. A cooldown countdown says **Eligible in …s**, then **Awaiting next check**; it does not promise an immediate retry at zero. Relay details show the current candidate number and connection timeout. **Prompt sent** confirms a receipt, not that the provider accepted the next model call.
+
+The automatic limit is two verified IP changes per session. There is no timed reset, and the count survives app restarts. **Recover session** explicitly queues another manual attempt; it still waits for busy work and verifies a changed IP. Pausing monitoring or excluding queued work stops its progress indicator. Ambiguous delivery stays visible for inspection instead of triggering an automatic resend.
+
 ## Relays and history
 
 **VPN relays** refreshes every five minutes and on **Refresh list**. Sort by recommendation, ping, or line speed. **Prioritize this relay** makes a selected relay the next first candidate; **Use automatic selection** clears the preference. Public relays are volunteer operated; advertised speed and ping do not guarantee availability.

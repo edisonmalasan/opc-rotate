@@ -19,6 +19,8 @@ SoftEther/OpenCode/Orca are needed for live integration, not unit tests or build
 
 Run `npm run dev`, then append `?preview=1` to Vite's printed URL. Add `&empty=1` to check empty states. The preview is clearly labeled, uses in-memory fixtures, and disables recovery, disconnection, and live refresh. It never invokes the desktop controller. Fixtures are excluded from production builds; normal browser access asks for the desktop app.
 
+Add `&recovery=1` to inspect sample connecting, cooldown, sent, and stopped session indicators. These are presentation fixtures; they never rotate a VPN or submit a prompt.
+
 ## Verification
 
 ```powershell
