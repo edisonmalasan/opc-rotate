@@ -3,6 +3,7 @@ import { DEFAULT_PROMPT, type Snapshot, type VpnServer } from "./types";
 // Loaded only by Vite's explicit development preview. No controller commands run.
 export function createPreviewSnapshot(): Snapshot {
   const now = Date.now();
+  const recoveryPreview = new URLSearchParams(location.search).get("recovery") === "1";
   const servers: VpnServer[] = [
     ["Japan", "203.0.113.42", 12, 842, 14],
     ["Japan", "203.0.113.43", 18, 1240, 28],
@@ -26,6 +27,12 @@ export function createPreviewSnapshot(): Snapshot {
     score: 100 - index,
   }));
   return {
+    recovery: recoveryPreview ? {
+      "preview-session-1": { stage: "connecting", detail: "Relay 2 of 5: Japan · vpn-example. Connection timeout: 20 seconds", updatedAt: now - 12000, retryAt: null, ipChanges: 1, maxIpChanges: 2, lastSentAt: now - 75000 },
+      "preview-session-2": { stage: "cooldown", detail: "Minimum 30 seconds after the last confirmed continuation; work and VPN checks can add time", updatedAt: now - 5000, retryAt: now + 25000, ipChanges: 1, maxIpChanges: 2, lastSentAt: now - 5000 },
+      "preview-session-5": { stage: "sent", detail: "Continuation receipt confirmed. Waiting for OpenCode's next result", updatedAt: now - 10000, retryAt: null, ipChanges: 1, maxIpChanges: 2, lastSentAt: now - 10000 },
+      "preview-session-6": { stage: "stopped", detail: "Automatic recovery stopped after two verified IP changes. Recover session starts a manual attempt", updatedAt: now - 22000, retryAt: null, ipChanges: 2, maxIpChanges: 2, lastSentAt: now - 70000 },
+    } : {},
     monitoring: false,
     sessionMonitoring: {},
     terminalMonitoring: {},
@@ -65,9 +72,9 @@ export function createPreviewSnapshot(): Snapshot {
         source: "orca",
         title: "Connection retry handling",
         project: "C:\\Projects\\opc-rotate",
-        state: "idle",
-        lastError: null,
-        errorKey: null,
+        state: recoveryPreview ? "rate-limited" : "idle",
+        lastError: recoveryPreview ? "Rate limit exceeded" : null,
+        errorKey: recoveryPreview ? "preview-new-429" : null,
         promptOverride: null,
         updatedAt: now - 160000,
       },
@@ -136,9 +143,9 @@ export function createPreviewSnapshot(): Snapshot {
         source: "other",
         title: "Outside terminal smoke check",
         project: "C:\\Projects\\opc-rotate",
-        state: "idle",
-        lastError: null,
-        errorKey: null,
+        state: recoveryPreview ? "rate-limited" : "idle",
+        lastError: recoveryPreview ? "Rate limit exceeded" : null,
+        errorKey: recoveryPreview ? "preview-stopped-429" : null,
         promptOverride: null,
         updatedAt: now - 24000,
       },

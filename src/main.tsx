@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import {
   EMPTY_SNAPSHOT,
+  type RecoveryProgress,
   type SessionTarget,
   type Snapshot,
   type VpnServer,
@@ -144,6 +145,41 @@ function StateLabel({ state }: { state: string }) {
   );
 }
 
+const recoveryLabels: Record<string, string> = {
+  queued: "Queued", waiting: "Waiting for work", cooldown: "Retry eligible",
+  checking: "Checking route", disconnecting: "Switching VPN", connecting: "Connecting VPN",
+  verifying: "Verifying IP", "waiting-target": "Waiting for idle", blocked: "Waiting for client",
+  sending: "Sending prompt", sent: "Prompt sent", stopped: "Auto limit reached",
+  failed: "Recovery failed", uncertain: "Check delivery", paused: "Recovery paused", history: "Recovery history",
+  unavailable: "Client unavailable",
+};
+const animatedRecovery = new Set(["checking", "disconnecting", "connecting", "verifying", "sending"]);
+const activeRecovery = new Set(["queued", "waiting", "checking", "disconnecting", "connecting", "verifying", "waiting-target", "blocked", "sending"]);
+
+function RecoveryStatus({ progress, detailed = false }: { progress?: RecoveryProgress; detailed?: boolean }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!progress?.retryAt) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [progress?.retryAt]);
+  if (!progress) return null;
+  const remaining = progress.retryAt ? Math.max(0, Math.ceil((progress.retryAt - now) / 1000)) : 0;
+  const label = progress.stage === "cooldown"
+    ? remaining > 0 ? `Eligible in ${remaining}s` : "Awaiting next check"
+    : recoveryLabels[progress.stage] || "Recovery update";
+  return (
+    <span className={`recovery-status ${progress.stage} ${detailed ? "detailed" : ""}`} title={progress.detail}>
+      {animatedRecovery.has(progress.stage) ? <LoaderCircle className="spin" size={13} aria-hidden="true" />
+        : progress.stage === "sent" ? <Check size={13} aria-hidden="true" />
+          : ["stopped", "failed", "uncertain"].includes(progress.stage) ? <CircleAlert size={13} aria-hidden="true" />
+            : <Clock3 size={13} aria-hidden="true" />}
+      <span role={progress.stage === "cooldown" ? "timer" : undefined} aria-live={progress.stage === "cooldown" ? "off" : undefined}>{label}</span>
+    </span>
+  );
+}
+
 function EmptyState({
   icon,
   title,
@@ -164,6 +200,7 @@ function EmptyState({
 
 function SessionItem({
   target,
+  progress,
   selected,
   monitored,
   monitoringDisabled,
@@ -171,6 +208,7 @@ function SessionItem({
   onSelect,
 }: {
   target: SessionTarget;
+  progress?: RecoveryProgress;
   selected: boolean;
   monitored: boolean;
   monitoringDisabled: boolean;
@@ -222,7 +260,10 @@ function SessionItem({
             )}
           </small>
         </span>
-        <StateLabel state={target.state} />
+        <span className="session-status-stack">
+          <StateLabel state={target.state} />
+          <RecoveryStatus progress={progress} />
+        </span>
         <time dateTime={new Date(target.updatedAt).toISOString()}>
           {timeAgo(target.updatedAt)}
         </time>
@@ -261,6 +302,7 @@ function SessionInspector({
       </aside>
     );
   const monitored = isMonitored(snapshot, target);
+  const progress = snapshot.recovery?.[target.id];
   const siblings = [...snapshot.orcaSessions, ...snapshot.otherSessions].filter(
     (item) => terminalKey(item) === terminalKey(target),
   );
@@ -307,6 +349,19 @@ function SessionInspector({
             </button>
           </div>
         )}
+        <section className="inspector-section recovery-panel" aria-label="Session recovery progress">
+          <h3>Recovery progress</h3>
+          <div role="status" aria-live="polite" aria-atomic="true">
+            {progress ? <RecoveryStatus progress={progress} detailed /> : <span className="detail-caption">No recovery queued</span>}
+          </div>
+          {progress && <p className="recovery-detail">{progress.detail}</p>}
+          <dl className="recovery-facts">
+            <div><dt>Verified IP changes</dt><dd>{progress?.ipChanges ?? 0} <span>· auto limit {progress?.maxIpChanges ?? 2}</span></dd></div>
+            {!!progress?.updatedAt && <div><dt>Stage started</dt><dd><time dateTime={new Date(progress.updatedAt).toISOString()}>{new Date(progress.updatedAt).toLocaleTimeString()}</time></dd></div>}
+            {progress?.lastSentAt && <div><dt>Last prompt sent</dt><dd><time dateTime={new Date(progress.lastSentAt).toISOString()}>{new Date(progress.lastSentAt).toLocaleTimeString()}</time></dd></div>}
+          </dl>
+          <p className="detail-caption">Orca waits at least 30 seconds after a confirmed prompt. Busy work and VPN checks can take longer. Outside sessions have no fixed retry delay.</p>
+        </section>
         <section className="inspector-section">
           <h3>Automatic recovery</h3>
           <label className="monitor-setting">
@@ -399,18 +454,19 @@ function SessionInspector({
           disabled={
             !canRecover ||
             !monitored ||
+            (progress && activeRecovery.has(progress.stage)) ||
             pending !== null ||
             (target.viaPlugin && !target.clientId) ||
             (target.source === "orca" && !target.clientId)
           }
           onClick={() => run("recover_now", { targetId: target.id })}
         >
-          {pending === "recover_now" ? (
+          {pending === "recover_now" || (progress && animatedRecovery.has(progress.stage)) ? (
             <LoaderCircle className="spin" size={16} />
           ) : (
             <RotateCcw size={16} />
           )}
-          Recover session
+          {progress && activeRecovery.has(progress.stage) ? "Recovery in progress" : "Recover session"}
         </button>
         <p>
           {monitored
@@ -764,6 +820,7 @@ function App() {
           data.otherSessions = [];
           data.servers = [];
           data.history = [];
+          data.recovery = {};
           data.connectedServer = null;
           data.publicIp = null;
           data.vpnStatus = "disconnected";
@@ -900,21 +957,34 @@ function App() {
     if (inFlight.current) return "Another action is in progress.";
     if (preview) {
       setSnapshot((current) => {
-        if (command === "set_monitoring")
-          return { ...current, monitoring: Boolean(args?.enabled) };
+        const pausePreview = (data: Snapshot, excluded: (id: string) => boolean): Snapshot => ({
+          ...data,
+          recovery: Object.fromEntries(Object.entries(data.recovery).map(([id, progress]) => [id,
+            excluded(id) && progress.stage !== "sending" && (activeRecovery.has(progress.stage) || progress.stage === "cooldown")
+              ? { ...progress, stage: "paused", detail: "Queued recovery canceled in this preview", retryAt: null, updatedAt: Date.now() }
+              : progress,
+          ])),
+        });
+        if (command === "set_monitoring") {
+          const next = { ...current, monitoring: Boolean(args?.enabled) };
+          return next.monitoring ? next : pausePreview(next, () => true);
+        }
         if (command === "set_session_monitoring") {
           const target = [
             ...current.orcaSessions,
             ...current.otherSessions,
           ].find((item) => item.id === args?.targetId);
-          return target
-            ? changeMonitoring(
+          if (!target) return current;
+          const next = changeMonitoring(
                 current,
                 target,
                 Boolean(args?.enabled),
                 Boolean(args?.wholeTerminal),
-              )
-            : current;
+              );
+          return pausePreview(next, (id) => {
+            const item = [...next.orcaSessions, ...next.otherSessions].find((session) => session.id === id);
+            return !!item && !isMonitored(next, item);
+          });
         }
         if (command === "set_preferred_server")
           return {
@@ -1046,6 +1116,7 @@ function App() {
           <SessionItem
             key={target.id}
             target={target}
+            progress={snapshot.recovery?.[target.id]}
             selected={target.id === selectedId}
             monitored={isMonitored(snapshot, target)}
             monitoringDisabled={!controlsAvailable || pending !== null}

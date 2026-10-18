@@ -31,7 +31,18 @@ export type SessionTarget = {
 
 export type HistoryEntry = { at: number; level: string; message: string };
 
+export type RecoveryProgress = {
+  stage: string;
+  detail: string;
+  updatedAt: number;
+  retryAt: number | null;
+  ipChanges: number;
+  maxIpChanges: number;
+  lastSentAt: number | null;
+};
+
 export type Snapshot = {
+  recovery: Record<string, RecoveryProgress>;
   monitoring: boolean;
   sessionMonitoring: Record<string, boolean>;
   terminalMonitoring: Record<string, boolean>;
@@ -55,6 +66,7 @@ export const DEFAULT_PROMPT =
   "Continue from where you stopped after the rate limit";
 
 export const EMPTY_SNAPSHOT: Snapshot = {
+  recovery: {},
   monitoring: false,
   sessionMonitoring: {},
   terminalMonitoring: {},

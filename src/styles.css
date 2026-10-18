@@ -853,6 +853,36 @@ button:focus-visible {
   width: var(--session-status-width);
   flex: 0 0 var(--session-status-width);
 }
+.session-status-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: var(--session-status-width);
+  flex: 0 0 var(--session-status-width);
+  min-width: 0;
+}
+.recovery-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-caption);
+  line-height: 1.4;
+  color: #d0d1d3;
+}
+.recovery-status svg { flex: 0 0 auto; }
+.recovery-status span { overflow-wrap: anywhere; }
+.recovery-status.stopped,
+.recovery-status.failed,
+.recovery-status.uncertain { color: var(--amber); }
+.recovery-status.sent { color: var(--green); }
+.recovery-status.detailed { font-size: var(--font-body); font-weight: 550; }
+.recovery-detail { color: var(--muted); font-size: var(--font-label); line-height: 1.6; margin: 10px 0 14px; overflow-wrap: anywhere; }
+.recovery-facts { display: grid; gap: 8px; margin: 14px 0; font-size: var(--font-caption); }
+.recovery-facts div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+.recovery-facts dt, .recovery-facts dd span { color: var(--dim); }
+.recovery-facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.recovery-panel .detail-caption { display: block; line-height: 1.6; }
 .session-item time {
   width: var(--session-time-width);
   flex: 0 0 var(--session-time-width);
@@ -1888,6 +1918,11 @@ button:focus-visible {
     flex: 0 0 auto;
     font-size: var(--font-caption);
   }
+  .session-status-stack {
+    width: 88px;
+    flex-basis: 88px;
+  }
+  .session-status-stack .session-state { white-space: normal; }
   .session-symbol {
     display: none;
   }
