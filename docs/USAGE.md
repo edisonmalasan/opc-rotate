@@ -19,7 +19,7 @@ SoftEther is a **separate installed dependency** in this preview. Its service an
 4. Choose which work to recover. All sessions are included initially; use the row checkboxes or **Monitor this terminal** in the inspector. A terminal rule includes new tabs; individual session choices override it. Choices are saved.
 5. Turn on **Monitoring** when ready. It starts off on a fresh install and restores your saved preference on subsequent launches.
 
-**Idle** means the session is live but not responding. **Working** means it is responding. **Needs recovery** means a qualifying provider failure was observed. **Status unavailable** means execution status could not be established. **Selected tab** describes the tab shown in its terminal, independently of whether it is working.
+**Idle** means the session is live but not responding. **Working** means it is responding. **Rate limited** or **Provider blocked** describes the latest qualifying provider failure. This appears beneath the session title; the separate **Recovery** column shows what Recovery is doing. **Status unavailable** means execution status could not be established. **Selected tab** describes the tab shown in its terminal, independently of whether it is working. The **Provider errors** filter includes affected sessions even if recovery is stopped or they are not monitored.
 
 Unchecked sessions stay visible as **Not monitored**. They cannot trigger recovery or receive its prompts. Unchecking removes queued work; a prompt already submitted cannot be recalled. Pausing Monitoring clears pending continuations without changing your selections. **Recover session** is a manual action for included sessions and works while automatic monitoring is paused.
 
@@ -51,9 +51,11 @@ The **30-second Orca delay is a minimum after a confirmed continuation receipt**
 
 Each affected row shows its recovery stage alongside its OpenCode activity: queued, waiting for work, connecting, verifying IP, waiting for idle, sending a prompt, prompt sent, or stopped/uncertain. Active connection and delivery stages use a small spinner; waiting stages use a static clock. Reduced motion keeps the stage text without continuous rotation. Only sessions in that recovery show progress; unrelated sessions retain their normal activity status.
 
-The session inspector's **Recovery progress** section shows the controller's current explanation, the verified IP-change count, stage start time, and last confirmed prompt time. A cooldown countdown says **Eligible in …s**, then **Awaiting next check**; it does not promise an immediate retry at zero. Relay details show the current candidate number and connection timeout. **Prompt sent** confirms a receipt, not that the provider accepted the next model call.
+The session inspector's **Recovery** section shows the controller's current explanation. Open **Attempts and timing** for the verified IP-change count, stage start time, and last confirmed prompt time. A cooldown countdown says **Eligible in …s**, then **Awaiting next check**; it does not promise an immediate retry at zero. Relay details show the current candidate number and connection timeout. **Prompt sent** confirms a receipt, not that the provider accepted the next model call.
 
 The automatic limit is two verified IP changes per session. There is no timed reset, and the count survives app restarts. **Recover session** explicitly queues another manual attempt; it still waits for busy work and verifies a changed IP. Pausing monitoring or excluding queued work stops its progress indicator. Ambiguous delivery stays visible for inspection instead of triggering an automatic resend.
+
+**Stopped · 2-IP limit** means automatic recovery has stopped; it is not still retrying. The inspector explains this and labels the manual action **Retry manually**. A session can remain **Rate limited** while its recovery is **Stopped**, because the provider failure and the app's recovery process are different states. Unchecked sessions show **Not monitored** in the recovery column.
 
 ## Relays and history
 

@@ -4,7 +4,7 @@
 
 OpenCode Recovery is a Windows x64 Tauri dashboard for live OpenCode sessions. Version **0.1.0** is a preview candidate. Read the [user guide](USAGE.md) for behavior and the [roadmap](ROADMAP.md) for verified milestones. Source and tests define implementation; this file maps them.
 
-The dashboard lists every live OpenCode tab directly beneath a project folder, separated into Orca and other sources. Idle/Working/Needs recovery/unavailable describe activity; selected/background describe terminal selection. Historical session lists and saved global tabs are not discovery sources. Previously observed failures remain visible after closure with no delivery route.
+The dashboard lists every live OpenCode tab directly beneath a project folder, separated into Orca and other sources. Idle/Working/Rate limited/Provider blocked/unavailable describe OpenCode activity beneath the title; selected/background describe terminal selection. A separate Recovery column shows the app's process, including Stopped · 2-IP limit. Historical session lists and saved global tabs are not discovery sources. Previously observed failures remain visible after closure with no delivery route.
 
 Saved monitoring rules include individual sessions and whole terminals. Session overrides win; new tabs inherit a terminal rule. A cached ownership binding preserves exclusions during API fallback. Unchecking prunes queued work. Pausing clears queues, and an epoch guard prevents raced busy receipts from restoring canceled work. Every busy session still protects machine-wide routing, regardless of monitoring selection.
 
@@ -51,7 +51,9 @@ Per-session recovery progress is exposed as `Snapshot.recovery`, separate from O
 
 ## Verification baseline and gaps
 
-The recovery-progress update passed **9 Node and 34 Rust tests**, the production frontend build, NSIS packaging, and the release fixture-exclusion check. New tests cover the Orca send-based minimum delay, outside-source timing, per-session progress/counts, exclusion cleanup, saved limits, and stable stage timestamps. Browser UI verification was blocked by the browser tool's URL policy; no visual or live VPN check is claimed for these indicators.
+The layout clarification fixes a flex-basis regression that made activity labels 124–128px tall inside a vertical stack. Session rows now use a shared grid with the sticky column header inside the same scroll container. Browser checks verified 72px desktop rows, exact header/recovery-column alignment, longer wrapped titles at the desktop minimum, no horizontal overflow at 1280 × 820, 980 × 660, and 390 × 844, keyboard selection, expandable timing details, monitoring exclusions, and empty search. Inspected non-disabled text contrast passed, and Impeccable's detector returned no findings. Timing and project details use native disclosures; manual retry remains the existing command, relabeled for stopped sessions. The earlier browser verification blocker is resolved for the current tab; no live VPN change was performed.
+
+The recovery-progress update passed **9 Node and 34 Rust tests**, the production frontend build, NSIS packaging, and the release fixture-exclusion check. New tests cover the Orca send-based minimum delay, outside-source timing, per-session progress/counts, exclusion cleanup, saved limits, and stable stage timestamps. Its original browser check was blocked; the current layout verification above supersedes that gap. Live VPN verification remains pending.
 
 The pre-release baseline passed **9 Node plugin tests and 31 Rust tests**, TypeScript/Vite build, and NSIS packaging. Windows helper coverage verifies no console handle while output is captured. Browser preview checks covered the requested project hierarchy, monitoring controls, keyboard behavior, empty states, desktop sizes, and inspected text contrast. Native checks confirmed live idle/background tabs and the free-tier provider error without triggering recovery.
 

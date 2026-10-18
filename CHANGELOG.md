@@ -9,6 +9,7 @@ Initial Windows x64 release candidate; a public GitHub release has not yet been 
 - Project-grouped live OpenCode tabs for Orca and other terminals, with independent activity and selected/background status.
 - Saved monitoring choices per session or terminal, prompt overrides, relay preferences, and connection activity.
 - Per-session recovery stages with active-work spinners, retry-eligibility countdowns, relay-attempt details, confirmed prompt times, and visible stop/uncertain states.
+- Compact aligned session rows with provider activity beneath the title, a dedicated Recovery column, clear two-IP stop/manual-retry wording, and expandable timing/project details.
 - VPN Gate relay ranking and bounded SoftEther connection attempts with changed-public-IPv4 verification.
 - Exact-session continuation requests, claimed receipts, uncertain-delivery protection, and a two-IP recovery limit.
 - Detection of rate-limit/quota failures and the specific OpenCode free-tier client-gate error.
