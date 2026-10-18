@@ -88,9 +88,9 @@ function groupProjects(targets: SessionTarget[]) {
 function sessionTitle(title: string) {
   return title.replace(/^OC\s*\|\s*/i, "");
 }
-function stateLabel(state: string) {
+function stateLabel(state: string, error?: string | null) {
   return state === "rate-limited"
-    ? "Needs recovery"
+    ? error?.toLowerCase().includes("free tier") ? "Provider blocked" : "Rate limited"
     : state === "busy"
       ? "Working"
       : state === "idle"
@@ -136,11 +136,11 @@ function lineSpeed(speed: number) {
     : `${Math.round(speed)} Mbps`;
 }
 
-function StateLabel({ state }: { state: string }) {
+function StateLabel({ state, error }: { state: string; error?: string | null }) {
   return (
     <span className={`session-state ${state}`}>
       <i />
-      {stateLabel(state)}
+      {stateLabel(state, error)}
     </span>
   );
 }
@@ -149,7 +149,7 @@ const recoveryLabels: Record<string, string> = {
   queued: "Queued", waiting: "Waiting for work", cooldown: "Retry eligible",
   checking: "Checking route", disconnecting: "Switching VPN", connecting: "Connecting VPN",
   verifying: "Verifying IP", "waiting-target": "Waiting for idle", blocked: "Waiting for client",
-  sending: "Sending prompt", sent: "Prompt sent", stopped: "Auto limit reached",
+  sending: "Sending prompt", sent: "Prompt sent", stopped: "Stopped · 2-IP limit",
   failed: "Recovery failed", uncertain: "Check delivery", paused: "Recovery paused", history: "Recovery history",
   unavailable: "Client unavailable",
 };
@@ -203,6 +203,7 @@ function SessionItem({
   progress,
   selected,
   monitored,
+  monitoring,
   monitoringDisabled,
   onMonitoringChange,
   onSelect,
@@ -211,6 +212,7 @@ function SessionItem({
   progress?: RecoveryProgress;
   selected: boolean;
   monitored: boolean;
+  monitoring: boolean;
   monitoringDisabled: boolean;
   onMonitoringChange: (enabled: boolean) => void;
   onSelect: () => void;
@@ -247,12 +249,9 @@ function SessionItem({
             {sessionTitle(target.title)}
           </strong>
           <small>
+            <StateLabel state={target.state} error={target.lastError} />
+            <span aria-hidden="true">·</span>
             {tabLabel(target)}
-            {!monitored && (
-              <>
-                <span>·</span>Not monitored
-              </>
-            )}
             {target.promptOverride && (
               <>
                 <span>·</span>Custom prompt
@@ -260,9 +259,13 @@ function SessionItem({
             )}
           </small>
         </span>
-        <span className="session-status-stack">
-          <StateLabel state={target.state} />
-          <RecoveryStatus progress={progress} />
+        <span className="session-recovery-column">
+          {progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage)) ? (
+            <>
+              <RecoveryStatus progress={progress} />
+              {progress.ipChanges > 0 && <small>{progress.ipChanges} {progress.ipChanges === 1 ? "IP change" : "IP changes"}</small>}
+            </>
+          ) : <span className="recovery-idle">{!monitored ? "Not monitored" : monitoring ? "Watching" : "Paused"}</span>}
         </span>
         <time dateTime={new Date(target.updatedAt).toISOString()}>
           {timeAgo(target.updatedAt)}
@@ -303,6 +306,16 @@ function SessionInspector({
     );
   const monitored = isMonitored(snapshot, target);
   const progress = snapshot.recovery?.[target.id];
+  const inProgress = !!progress && activeRecovery.has(progress.stage);
+  const stopped = progress?.stage === "stopped";
+  const showProgress = !!progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage));
+  const recoveryExplanation = !monitored && !showProgress
+    ? "Enable this session below to include it in recovery."
+    : stopped && monitored
+      ? "The provider still rejected work after two verified IP changes. You can start another attempt manually."
+      : showProgress ? progress.detail
+        : !snapshot.monitoring ? "Turn on Monitoring for automatic recovery, or start a manual attempt."
+          : "Watching for provider errors. Recovery starts when this session needs it.";
   const siblings = [...snapshot.orcaSessions, ...snapshot.otherSessions].filter(
     (item) => terminalKey(item) === terminalKey(target),
   );
@@ -312,7 +325,7 @@ function SessionInspector({
     (item) => isMonitored(snapshot, item) !== terminalIncluded,
   );
   return (
-    <aside className="inspector" aria-label="Selected session details">
+    <aside className="inspector session-inspector" aria-label="Selected session details">
       <div className="inspector-toolbar">
         <span>Session details</span>
         <button
@@ -326,44 +339,40 @@ function SessionInspector({
       <div className="inspector-scroll">
         <h2 className="inspector-title">{sessionTitle(target.title)}</h2>
         <div className="inspector-session-meta">
-          <StateLabel state={target.state} />
+          <StateLabel state={target.state} error={target.lastError} />
           <span>{target.source === "orca" ? "Orca terminal" : "OpenCode"}</span>
         </div>
         {target.viaPlugin && (
           <div className="tab-context-actions">
             <span>{tabLabel(target)}</span>
-            <button
+            {!target.selectedTab && <button
               className="text-button"
-              disabled={
-                !target.clientId || target.selectedTab || pending !== null
-              }
+              disabled={!target.clientId || pending !== null}
               onClick={() => run("select_session_tab", { targetId: target.id })}
             >
-              {target.selectedTab ? (
-                <>
-                  <Check size={13} /> Selected
-                </>
-              ) : (
-                "Select tab"
-              )}
-            </button>
+              Select tab
+            </button>}
           </div>
         )}
         <section className="inspector-section recovery-panel" aria-label="Session recovery progress">
-          <h3>Recovery progress</h3>
+          <h3>Recovery</h3>
           <div role="status" aria-live="polite" aria-atomic="true">
-            {progress ? <RecoveryStatus progress={progress} detailed /> : <span className="detail-caption">No recovery queued</span>}
+            {showProgress ? <RecoveryStatus progress={progress} detailed /> : <strong className="recovery-summary">{!monitored ? "Not monitored" : snapshot.monitoring ? "Watching this session" : "Monitoring paused"}</strong>}
           </div>
-          {progress && <p className="recovery-detail">{progress.detail}</p>}
-          <dl className="recovery-facts">
-            <div><dt>Verified IP changes</dt><dd>{progress?.ipChanges ?? 0} <span>· auto limit {progress?.maxIpChanges ?? 2}</span></dd></div>
-            {!!progress?.updatedAt && <div><dt>Stage started</dt><dd><time dateTime={new Date(progress.updatedAt).toISOString()}>{new Date(progress.updatedAt).toLocaleTimeString()}</time></dd></div>}
-            {progress?.lastSentAt && <div><dt>Last prompt sent</dt><dd><time dateTime={new Date(progress.lastSentAt).toISOString()}>{new Date(progress.lastSentAt).toLocaleTimeString()}</time></dd></div>}
-          </dl>
-          <p className="detail-caption">Orca waits at least 30 seconds after a confirmed prompt. Busy work and VPN checks can take longer. Outside sessions have no fixed retry delay.</p>
+          <p className="recovery-detail">{recoveryExplanation}</p>
+          <details className="session-disclosure recovery-disclosure">
+            <summary>Attempts and timing</summary>
+            <dl className="recovery-facts">
+              <div><dt>Verified IP changes</dt><dd>{progress?.ipChanges ?? 0}</dd></div>
+              <div><dt>Automatic limit</dt><dd>{progress?.maxIpChanges ?? 2} IP changes</dd></div>
+              {!!progress?.updatedAt && <div><dt>Stage started</dt><dd><time dateTime={new Date(progress.updatedAt).toISOString()}>{new Date(progress.updatedAt).toLocaleTimeString()}</time></dd></div>}
+              {!!progress?.lastSentAt && <div><dt>Last prompt sent</dt><dd><time dateTime={new Date(progress.lastSentAt).toISOString()}>{new Date(progress.lastSentAt).toLocaleTimeString()}</time></dd></div>}
+            </dl>
+            <p className="detail-caption">{target.source === "orca" ? "Retries become eligible 30 seconds after a confirmed prompt. " : "This session has no fixed retry delay. "}Busy work and VPN checks can extend the wait.</p>
+          </details>
         </section>
         <section className="inspector-section">
-          <h3>Automatic recovery</h3>
+          <h3>Monitoring</h3>
           <label className="monitor-setting">
             <span>Monitor this session</span>
             <input
@@ -383,7 +392,7 @@ function SessionInspector({
             <label className="monitor-setting">
               <span>
                 Monitor this terminal
-                <small>Applies to all tabs, including new ones.</small>
+                <small>Includes new tabs.</small>
               </span>
               <input
                 type="checkbox"
@@ -404,13 +413,12 @@ function SessionInspector({
           )}
           <p className="monitor-help">
             {snapshot.monitoring
-              ? "Monitoring is on for checked sessions."
-              : "Monitoring is paused. Your selection is saved."}{" "}
-            Recovery waits for all working sessions before changing the VPN.
+              ? terminalMixed ? "Some tabs have individual monitoring choices." : "Recovery waits for all working sessions."
+              : "Monitoring is paused. Your choices are saved."}
           </p>
         </section>
-        <section className="inspector-section">
-          <h3>Project</h3>
+        <details className="session-disclosure project-disclosure">
+          <summary>Project</summary>
           <div className="project-location">
             <Folder size={15} />
             <strong>{projectName(target.project)}</strong>
@@ -418,7 +426,7 @@ function SessionInspector({
           <p className="path-text">
             {target.project || "Project path unavailable"}
           </p>
-        </section>
+        </details>
         {target.lastError && (
           <section className="inspector-section">
             <h3>Latest error</h3>
@@ -466,12 +474,15 @@ function SessionInspector({
           ) : (
             <RotateCcw size={16} />
           )}
-          {progress && activeRecovery.has(progress.stage) ? "Recovery in progress" : "Recover session"}
+          {inProgress ? "Recovery in progress" : stopped && monitored ? "Retry manually" : "Recover session"}
         </button>
         <p>
           {monitored
-            ? "A new route is verified before continuing. Recovery waits for other responding sessions."
-            : "Enable monitoring for this session to recover it."}
+            ? !isTauri() ? "Recovery actions are available in the desktop app."
+              : inProgress ? "This session is already queued for recovery."
+                : stopped ? "One manual attempt. The automatic limit stays at two IP changes."
+                  : "Verifies a new IP before sending a continuation."
+            : "Enable “Monitor this session” above to recover it."}
         </p>
       </div>
     </aside>
@@ -1119,6 +1130,7 @@ function App() {
             progress={snapshot.recovery?.[target.id]}
             selected={target.id === selectedId}
             monitored={isMonitored(snapshot, target)}
+            monitoring={snapshot.monitoring}
             monitoringDisabled={!controlsAvailable || pending !== null}
             onMonitoringChange={(enabled) =>
               run("set_session_monitoring", {
@@ -1387,7 +1399,7 @@ function App() {
                 {(
                   [
                     ["all", "All sessions"],
-                    ["limited", "Needs recovery"],
+                    ["limited", "Provider errors"],
                     ["busy", "Working"],
                     ["idle", "Idle"],
                   ] as const
@@ -1415,12 +1427,12 @@ function App() {
             </div>
             <div className="workspace-body">
               <div className="session-list-pane">
-                <div className="list-column-labels">
-                  <span>Session / project</span>
-                  <span>Status</span>
-                  <span>Updated</span>
-                </div>
                 <div className="session-groups" onKeyDown={moveSession}>
+                  <div className="list-column-labels">
+                    <span>Session / project</span>
+                    <span>Recovery</span>
+                    <span>Updated</span>
+                  </div>
                   {shownSessions.length ? (
                     <>
                       {shownGroups.map((group) =>
