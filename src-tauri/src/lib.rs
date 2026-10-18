@@ -6,7 +6,7 @@ mod process;
 mod softether;
 mod vpngate;
 
-use models::{HistoryEntry, SessionTarget, Settings, Snapshot, VpnServer};
+use models::{HistoryEntry, RecoveryProgress, SessionTarget, Settings, Snapshot, VpnServer};
 use serde::{Deserialize, Serialize};
 use softether::{RealVpnRunner, SoftEther};
 use std::collections::{HashMap, HashSet};
@@ -17,6 +17,8 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
 const BUSY_DEFERRED: &str = "Other OpenCode sessions are still active; recovery remains queued";
+const MAX_IP_CHANGES: u8 = 2;
+const ORCA_RETRY_GAP_MS: u64 = 30_000;
 
 #[derive(Serialize, Deserialize, Default)]
 struct Persisted {
@@ -30,6 +32,7 @@ struct Persisted {
 }
 
 struct Inner {
+    recovery: HashMap<String, RecoveryProgress>,
     settings: Settings,
     servers: Vec<VpnServer>,
     refreshed_at: Option<u64>,
@@ -59,6 +62,41 @@ enum RecoveryPlan {
 }
 
 impl Inner {
+    fn progress(
+        &mut self,
+        id: &str,
+        stage: &str,
+        detail: impl Into<String>,
+        retry_at: Option<u64>,
+    ) {
+        let detail = detail.into();
+        let old = self.recovery.get(id);
+        let updated_at = old
+            .filter(|old| old.stage == stage && old.detail == detail && old.retry_at == retry_at)
+            .map(|old| old.updated_at)
+            .unwrap_or_else(process::now_ms);
+        self.recovery.insert(
+            id.into(),
+            RecoveryProgress {
+                stage: stage.into(),
+                detail,
+                updated_at,
+                retry_at,
+                ip_changes: self.ip_attempts.get(id).copied().unwrap_or(0),
+                max_ip_changes: MAX_IP_CHANGES,
+                last_sent_at: self.last_recovery_at.get(id).copied(),
+            },
+        );
+    }
+
+    fn pending_progress(&mut self, stage: &str, detail: &str) {
+        for id in self.pending.clone() {
+            if !self.ready_to_resume.contains(&id) {
+                self.progress(&id, stage, detail, None);
+            }
+        }
+    }
+
     fn prune_unmonitored(&mut self) {
         let allowed = self
             .orca_sessions
@@ -67,6 +105,25 @@ impl Inner {
             .filter(|target| self.settings.monitors(target))
             .map(|target| target.id.clone())
             .collect::<HashSet<_>>();
+        let queued = self
+            .pending
+            .iter()
+            .cloned()
+            .chain(
+                self.recovery
+                    .iter()
+                    .filter(|(_, p)| p.stage == "cooldown")
+                    .map(|(id, _)| id.clone()),
+            )
+            .collect::<HashSet<_>>();
+        for id in queued.into_iter().filter(|id| !allowed.contains(id)) {
+            self.progress(
+                &id,
+                "paused",
+                "Not monitored; queued recovery canceled",
+                None,
+            );
+        }
         self.pending.retain(|id| allowed.contains(id));
         self.ready_to_resume.retain(|id| allowed.contains(id));
     }
@@ -89,13 +146,34 @@ impl Inner {
 
     fn mark_verified_ip(&mut self) {
         for id in self.pending.clone() {
-            *self.ip_attempts.entry(id.clone()).or_default() += 1;
-            self.ready_to_resume.insert(id);
+            let attempts = self.ip_attempts.entry(id.clone()).or_default();
+            *attempts = attempts.saturating_add(1);
+            self.ready_to_resume.insert(id.clone());
+            self.progress(
+                &id,
+                "waiting-target",
+                "New IPv4 verified; waiting for this session to be idle",
+                None,
+            );
         }
     }
 
     fn snapshot(&self) -> Snapshot {
+        let mut recovery = self.recovery.clone();
+        for target in self.orca_sessions.iter().chain(&self.other_sessions) {
+            if let Some(&ip_changes) = self.ip_attempts.get(&target.id) {
+                recovery.entry(target.id.clone()).or_insert_with(|| RecoveryProgress {
+                    stage: if ip_changes >= MAX_IP_CHANGES && target.state == "rate-limited" { "stopped" } else { "history" }.into(),
+                    detail: if ip_changes >= MAX_IP_CHANGES && target.state == "rate-limited" {
+                        "Automatic IP-change limit used. Recover session starts an explicit manual attempt"
+                    } else { "Saved IP-change count for this session" }.into(),
+                    updated_at: 0, retry_at: None, ip_changes,
+                    max_ip_changes: MAX_IP_CHANGES, last_sent_at: self.last_recovery_at.get(&target.id).copied(),
+                });
+            }
+        }
         Snapshot {
+            recovery,
             monitoring: self.settings.monitoring,
             session_monitoring: self.settings.session_monitoring.clone(),
             terminal_monitoring: self.settings.terminal_monitoring.clone(),
@@ -175,6 +253,7 @@ impl Controller {
         };
         Self {
             inner: Mutex::new(Inner {
+                recovery: HashMap::new(),
                 settings: persisted.settings,
                 servers: Vec::new(),
                 refreshed_at: None,
@@ -337,8 +416,28 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
             })
             .map(|t| t.id.clone())
             .collect::<HashSet<_>>();
+        for id in inner
+            .pending
+            .clone()
+            .into_iter()
+            .filter(|id| !available.contains(id))
+        {
+            inner.progress(
+                &id,
+                "unavailable",
+                "The tab is closed or its live client is unavailable",
+                None,
+            );
+        }
         inner.pending.retain(|id| available.contains(id));
         inner.ready_to_resume.retain(|id| available.contains(id));
+        let visible = inner
+            .orca_sessions
+            .iter()
+            .chain(&inner.other_sessions)
+            .map(|target| target.id.clone())
+            .collect::<HashSet<_>>();
+        inner.recovery.retain(|id, _| visible.contains(id));
         let overrides = inner.settings.prompt_overrides.clone();
         for target in inner.orca_sessions.iter_mut() {
             target.prompt_override = overrides.get(&target.id).cloned();
@@ -392,9 +491,17 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
             continue;
         }
         if target.state != "rate-limited" {
+            if inner
+                .recovery
+                .get(&target.id)
+                .is_some_and(|p| p.stage == "cooldown")
+            {
+                inner.recovery.remove(&target.id);
+            }
             if target.state == "completed" {
                 inner.ip_attempts.remove(&target.id);
                 inner.last_recovery_at.remove(&target.id);
+                inner.recovery.remove(&target.id);
             }
             continue;
         }
@@ -412,15 +519,15 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
         {
             continue;
         }
-        if target.source == "orca"
-            && inner
-                .last_recovery_at
-                .get(&target.id)
-                .is_some_and(|at| process::now_ms().saturating_sub(*at) < 30_000)
-        {
+        let retry_at = inner
+            .last_recovery_at
+            .get(&target.id)
+            .map(|at| at.saturating_add(ORCA_RETRY_GAP_MS));
+        if target.source == "orca" && retry_at.is_some_and(|at| process::now_ms() < at) {
+            inner.progress(&target.id, "cooldown", "Minimum 30 seconds after the last confirmed continuation; work and VPN checks can add time", retry_at);
             continue;
         }
-        if inner.ip_attempts.get(&target.id).copied().unwrap_or(0) >= 2 {
+        if inner.ip_attempts.get(&target.id).copied().unwrap_or(0) >= MAX_IP_CHANGES {
             inner.handled.insert(key.clone());
             inner.last_error = Some(format!(
                 "Recovery error persisted after two new IPs for {}",
@@ -433,8 +540,15 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
                     target.title
                 ),
             );
+            inner.progress(&target.id, "stopped", "Automatic recovery stopped after two verified IP changes. Recover session starts a manual attempt", None);
         } else {
             inner.pending.insert(target.id.clone());
+            inner.progress(
+                &target.id,
+                "queued",
+                "Waiting for the shared VPN recovery controller",
+                None,
+            );
             new_incidents.push(target.title.clone());
         }
     }
@@ -467,6 +581,7 @@ async fn start_recovery_if_needed(app: AppHandle, controller: Arc<Controller>) {
                 if let Some(key) = inner.target(&id).and_then(|target| target.error_key) {
                     inner.handled.insert(key);
                 }
+                inner.progress(&id, "failed", &error, None);
             }
             drop(inner);
             controller.set_error(&app, error).await;
@@ -510,6 +625,10 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         {
             let mut inner = controller.inner.lock().await;
             inner.phase = format!("waiting for {busy} active session(s)");
+            inner.pending_progress(
+                "waiting",
+                &format!("Waiting for {busy} active session(s) before changing the machine's VPN"),
+            );
         }
         controller.emit(app).await;
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -519,6 +638,11 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         return Err(BUSY_DEFERRED.into());
     }
 
+    controller.inner.lock().await.pending_progress(
+        "checking",
+        "Checking current public IPv4 and preparing the VPN relays",
+    );
+    controller.emit(app).await;
     let baseline_ip = public_ip(&controller.http).await?;
     let (mut servers, previous_profile, previous_server, preferred) = {
         let inner = controller.inner.lock().await;
@@ -583,6 +707,11 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         return Err("Another SoftEther connection is active. Disconnect it manually before automatic recovery.".into());
     }
     if let Some(profile) = previous_profile {
+        controller.inner.lock().await.pending_progress(
+            "disconnecting",
+            "Disconnecting the previous app-owned VPN profile",
+        );
+        controller.emit(app).await;
         vpn.cleanup(&profile).await?;
         let mut inner = controller.inner.lock().await;
         inner.settings.managed_profile = None;
@@ -591,7 +720,8 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         drop(inner);
         controller.save().await;
     }
-    for server in servers {
+    let relay_total = servers.len();
+    for (index, server) in servers.into_iter().enumerate() {
         if controller.inner.lock().await.pending.is_empty() {
             return Ok(());
         }
@@ -603,6 +733,15 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
             let mut inner = controller.inner.lock().await;
             inner.phase = format!("connecting to {}", server.host);
             inner.vpn_status = "connecting".into();
+            inner.pending_progress(
+                "connecting",
+                &format!(
+                    "Relay {} of {relay_total}: {} · {}. Connection timeout: 20 seconds",
+                    index + 1,
+                    server.country,
+                    server.host
+                ),
+            );
         }
         controller.emit(app).await;
         match vpn
@@ -620,6 +759,11 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
                 continue;
             }
         }
+        controller.inner.lock().await.pending_progress(
+            "verifying",
+            "VPN connected; verifying that the public IPv4 changed",
+        );
+        controller.emit(app).await;
         let mut new_ip = None;
         for _ in 0..4 {
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -678,6 +822,12 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         inner.vpn_status = "disconnected".into();
         for id in &pending {
             inner.pending.remove(id);
+            inner.progress(
+                id,
+                "failed",
+                "All VPN relay candidates failed; inspect Activity before retrying",
+                None,
+            );
         }
     }
     Err("All five VPN Gate connection candidates failed".into())
@@ -773,8 +923,31 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
         };
         let channel = match channel {
             Ok(Some(channel)) => channel,
-            Ok(None) => continue,
+            Ok(None) => {
+                let mut inner = controller.inner.lock().await;
+                if inner.pending.contains(id) && inner.pause_epoch == pause_epoch {
+                    inner.progress(
+                        id,
+                        "waiting-target",
+                        "New IPv4 verified; this session is still working",
+                        None,
+                    );
+                }
+                drop(inner);
+                controller.emit(app).await;
+                continue;
+            }
             Err(error) => {
+                let mut inner = controller.inner.lock().await;
+                if inner.pending.contains(id) && inner.pause_epoch == pause_epoch {
+                    inner.progress(
+                        id,
+                        "blocked",
+                        format!("New IPv4 verified; waiting to continue: {error}"),
+                        None,
+                    );
+                }
+                drop(inner);
                 controller
                     .record(
                         app,
@@ -793,6 +966,12 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
             {
                 inner.pending.remove(id);
                 inner.ready_to_resume.remove(id);
+                inner.progress(
+                    id,
+                    "paused",
+                    "Queued recovery canceled before submission",
+                    None,
+                );
                 continue;
             }
             if let Some(key) = target.error_key.clone() {
@@ -801,8 +980,15 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
             }
             inner.pending.remove(id);
             inner.ready_to_resume.remove(id);
+            inner.progress(
+                id,
+                "sending",
+                "Submitting the continuation to this exact session; waiting for its receipt",
+                None,
+            );
         }
         controller.save().await;
+        controller.emit(app).await;
         let result = match channel {
             ResumeChannel::Bridge => presence::command(&target, "prompt", Some(&prompt)).await,
             ResumeChannel::Api(client, session_id) => client
@@ -819,18 +1005,30 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
                 if inner.settings.monitors(&target) && inner.pause_epoch == pause_epoch {
                     inner.pending.insert(id.clone());
                     inner.ready_to_resume.insert(id.clone());
+                    inner.progress(
+                        id,
+                        "waiting-target",
+                        "The session became busy; keeping the verified IP until it is idle",
+                        None,
+                    );
+                } else {
+                    inner.progress(id, "paused", "Recovery was paused before submission", None);
                 }
                 drop(inner);
                 controller.save().await;
+                controller.emit(app).await;
                 continue;
             }
             Ok(presence::Delivery::Accepted(receipt)) => {
-                controller
-                    .inner
-                    .lock()
-                    .await
-                    .last_recovery_at
-                    .insert(id.clone(), process::now_ms());
+                let mut inner = controller.inner.lock().await;
+                inner.last_recovery_at.insert(id.clone(), process::now_ms());
+                inner.progress(
+                    id,
+                    "sent",
+                    "Continuation receipt confirmed. Waiting for OpenCode's next result",
+                    None,
+                );
+                drop(inner);
                 controller
                     .record(
                         app,
@@ -840,6 +1038,7 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
                     .await;
             }
             Err(error) => {
+                controller.inner.lock().await.progress(id, "uncertain", format!("Delivery could not be confirmed; inspect the session before retrying. {error}"), None);
                 controller
                     .record(
                         app,
@@ -922,6 +1121,26 @@ async fn set_monitoring(
         inner.settings.monitoring = enabled;
         if !enabled {
             inner.pause_epoch = inner.pause_epoch.wrapping_add(1);
+            let queued = inner
+                .pending
+                .iter()
+                .cloned()
+                .chain(
+                    inner
+                        .recovery
+                        .iter()
+                        .filter(|(_, p)| p.stage == "cooldown")
+                        .map(|(id, _)| id.clone()),
+                )
+                .collect::<HashSet<_>>();
+            for id in queued {
+                inner.progress(
+                    &id,
+                    "paused",
+                    "Monitoring paused; queued recovery canceled",
+                    None,
+                );
+            }
             inner.pending.clear();
             inner.ready_to_resume.clear();
         }
@@ -1092,7 +1311,13 @@ async fn recover_now(
                     .into(),
             );
         }
-        inner.pending.insert(target_id);
+        inner.pending.insert(target_id.clone());
+        inner.progress(
+            &target_id,
+            "queued",
+            "Manual recovery queued; waits for busy work before changing the VPN",
+            None,
+        );
     }
     start_recovery_if_needed(app, state.inner().clone()).await;
     Ok(state.snapshot().await)
@@ -1174,6 +1399,7 @@ mod tests {
 
     fn inner() -> Inner {
         Inner {
+            recovery: HashMap::new(),
             settings: Settings {
                 monitoring: true,
                 ..Settings::default()
@@ -1238,6 +1464,88 @@ mod tests {
         assert_eq!(queue_incidents(&mut state).len(), 1);
         assert!(state.pending.contains("api:orca"));
         assert!(!state.pending.contains("api:outside"));
+    }
+
+    #[test]
+    fn orca_gap_is_measured_from_confirmed_send_and_does_not_delay_outside_sessions() {
+        let mut state = inner();
+        state.orca_sessions = vec![target(
+            "orca:one",
+            "orca",
+            "rate-limited",
+            Some("new-orca-error"),
+        )];
+        state.other_sessions = vec![target(
+            "api:two",
+            "other",
+            "rate-limited",
+            Some("new-api-error"),
+        )];
+        let sent = process::now_ms();
+        state.last_recovery_at.insert("orca:one".into(), sent);
+        state.last_recovery_at.insert("api:two".into(), sent);
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(!state.pending.contains("orca:one"));
+        assert!(state.pending.contains("api:two"));
+        assert_eq!(state.recovery["orca:one"].stage, "cooldown");
+        assert_eq!(
+            state.recovery["orca:one"].retry_at,
+            Some(sent + ORCA_RETRY_GAP_MS)
+        );
+        state
+            .last_recovery_at
+            .insert("orca:one".into(), sent - ORCA_RETRY_GAP_MS);
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert_eq!(state.recovery["orca:one"].stage, "queued");
+        assert!(state.recovery["orca:one"].retry_at.is_none());
+    }
+
+    #[test]
+    fn progress_is_per_session_counts_only_verified_ips_and_stops_when_excluded() {
+        let mut state = inner();
+        state.orca_sessions = vec![target("orca:one", "orca", "rate-limited", Some("failure"))];
+        state.other_sessions = vec![target("api:busy", "other", "busy", None)];
+        queue_incidents(&mut state);
+        state.pending_progress("connecting", "Relay 2 of 5");
+        assert_eq!(state.recovery["orca:one"].ip_changes, 0);
+        assert!(!state.recovery.contains_key("api:busy"));
+        state.mark_verified_ip();
+        assert_eq!(state.recovery["orca:one"].stage, "waiting-target");
+        assert_eq!(state.recovery["orca:one"].ip_changes, 1);
+        state
+            .settings
+            .session_monitoring
+            .insert("orca:one".into(), false);
+        state.prune_unmonitored();
+        assert_eq!(state.recovery["orca:one"].stage, "paused");
+        assert!(state.pending.is_empty() && state.ready_to_resume.is_empty());
+        // A cooldown is not in the pending queue, but exclusion must cancel its countdown too.
+        state.progress(
+            "orca:one",
+            "cooldown",
+            "Waiting",
+            Some(process::now_ms() + 10_000),
+        );
+        state.prune_unmonitored();
+        assert_eq!(state.recovery["orca:one"].stage, "paused");
+        assert!(state.recovery["orca:one"].retry_at.is_none());
+    }
+
+    #[test]
+    fn saved_attempts_show_the_limit_after_restart_and_repeated_updates_keep_the_stage_time() {
+        let mut state = inner();
+        state.orca_sessions = vec![target("orca:one", "orca", "rate-limited", Some("failure"))];
+        state.ip_attempts.insert("orca:one".into(), MAX_IP_CHANGES);
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.recovery["orca:one"].stage, "stopped");
+        assert_eq!(snapshot.recovery["orca:one"].ip_changes, 2);
+        state.progress("orca:one", "waiting", "Waiting for work", None);
+        state.recovery.get_mut("orca:one").unwrap().updated_at = 42;
+        state.progress("orca:one", "waiting", "Waiting for work", None);
+        assert_eq!(state.recovery["orca:one"].updated_at, 42);
+        state.orca_sessions[0].state = "completed".into();
+        queue_incidents(&mut state);
+        assert!(!state.snapshot().recovery.contains_key("orca:one"));
     }
 
     #[test]

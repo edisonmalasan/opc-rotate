@@ -54,6 +54,18 @@ pub struct HistoryEntry {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RecoveryProgress {
+    pub stage: String,
+    pub detail: String,
+    pub updated_at: u64,
+    pub retry_at: Option<u64>,
+    pub ip_changes: u8,
+    pub max_ip_changes: u8,
+    pub last_sent_at: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub monitoring: bool,
     #[serde(default)]
@@ -262,6 +274,7 @@ mod tests {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub recovery: std::collections::HashMap<String, RecoveryProgress>,
     pub monitoring: bool,
     pub session_monitoring: std::collections::HashMap<String, bool>,
     pub terminal_monitoring: std::collections::HashMap<String, bool>,
