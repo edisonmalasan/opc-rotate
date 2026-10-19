@@ -156,7 +156,84 @@ const recoveryLabels: Record<string, string> = {
 const animatedRecovery = new Set(["checking", "disconnecting", "connecting", "verifying", "sending"]);
 const activeRecovery = new Set(["queued", "waiting", "checking", "disconnecting", "connecting", "verifying", "waiting-target", "blocked", "sending"]);
 
-function RecoveryStatus({ progress, detailed = false }: { progress?: RecoveryProgress; detailed?: boolean }) {
+const routeStations = [
+  { key: "queued", label: "Queued" },
+  { key: "waiting", label: "Idle wait" },
+  { key: "route", label: "New route" },
+  { key: "verify", label: "Verify IP" },
+  { key: "deliver", label: "Deliver" },
+  { key: "receipt", label: "Receipt" },
+] as const;
+
+const routeIndex: Record<string, number> = {
+  queued: 0,
+  waiting: 1,
+  checking: 2,
+  disconnecting: 2,
+  connecting: 2,
+  verifying: 3,
+  "waiting-target": 4,
+  blocked: 4,
+  sending: 4,
+  sent: 5,
+  cooldown: 5,
+};
+
+type RouteNode = "done" | "current" | "held" | "todo" | "break" | "terminated";
+
+/**
+ * The recovery route as a fixed sequence of stations. A session with no route
+ * (never started, paused, unavailable) returns null and shows no line at all.
+ */
+function routeNodes(stage: string): RouteNode[] | null {
+  if (stage === "sent") return ["done", "done", "done", "done", "done", "done"];
+  if (stage === "stopped") return ["done", "done", "done", "done", "done", "terminated"];
+  if (stage === "uncertain") return ["done", "done", "done", "done", "done", "break"];
+  if (stage === "failed") return ["done", "done", "break", "todo", "todo", "todo"];
+  const at = routeIndex[stage];
+  if (at === undefined) return null;
+  if (stage === "cooldown") return ["done", "done", "done", "done", "done", "held"];
+  return routeStations.map((_, index) => (index < at ? "done" : index === at ? "current" : "todo"));
+}
+
+function RouteLine({ stage }: { stage: string }) {
+  const nodes = routeNodes(stage);
+  if (!nodes) return null;
+  return (
+    <span className="route-line" aria-hidden="true">
+      {nodes.map((state, index) => (
+        <span key={index} className={`node ${state}`} />
+      ))}
+    </span>
+  );
+}
+
+function RouteTrack({ stage }: { stage: string }) {
+  const nodes = routeNodes(stage);
+  if (!nodes) return null;
+  const reached = nodes.findIndex((state) => state !== "todo" && state !== "done");
+  return (
+    <ol className="route-track">
+      {routeStations.map((station, index) => (
+        <li key={station.key} className={`station ${nodes[index]}`}>
+          <span className="marker" aria-hidden="true" />
+          <span className="name">{station.label}</span>
+          {index === reached && <span className="at">now</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function RecoveryStatus({
+  progress,
+  detailed = false,
+  bare = false,
+}: {
+  progress?: RecoveryProgress;
+  detailed?: boolean;
+  bare?: boolean;
+}) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!progress?.retryAt) return;
@@ -169,6 +246,13 @@ function RecoveryStatus({ progress, detailed = false }: { progress?: RecoveryPro
   const label = progress.stage === "cooldown"
     ? remaining > 0 ? `Eligible in ${remaining}s` : "Awaiting next check"
     : recoveryLabels[progress.stage] || "Recovery update";
+  if (bare) {
+    return (
+      <span className={`recovery-status bare ${progress.stage}`} title={progress.detail}>
+        <span role={progress.stage === "cooldown" ? "timer" : undefined} aria-live={progress.stage === "cooldown" ? "off" : undefined}>{label}</span>
+      </span>
+    );
+  }
   return (
     <span className={`recovery-status ${progress.stage} ${detailed ? "detailed" : ""}`} title={progress.detail}>
       {animatedRecovery.has(progress.stage) ? <LoaderCircle className="spin" size={13} aria-hidden="true" />
@@ -241,13 +325,13 @@ function SessionItem({
         aria-pressed={selected}
         onClick={onSelect}
       >
-        <span className={`session-symbol ${target.state}`}>
-          <Terminal size={18} strokeWidth={1.6} />
-        </span>
         <span className="session-item-copy">
-          <strong title={sessionTitle(target.title)}>
-            {sessionTitle(target.title)}
-          </strong>
+          <span className="session-title-line">
+            <strong title={sessionTitle(target.title)}>
+              {sessionTitle(target.title)}
+            </strong>
+            {target.sessionId && <code className="session-id">{target.sessionId}</code>}
+          </span>
           <small>
             <StateLabel state={target.state} error={target.lastError} />
             <span aria-hidden="true">·</span>
@@ -262,8 +346,15 @@ function SessionItem({
         <span className="session-recovery-column">
           {progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage)) ? (
             <>
-              <RecoveryStatus progress={progress} />
-              {progress.ipChanges > 0 && <small>{progress.ipChanges} {progress.ipChanges === 1 ? "IP change" : "IP changes"}</small>}
+              <RouteLine stage={progress.stage} />
+              <span className="recovery-meta">
+                <RecoveryStatus progress={progress} bare />
+                {progress.ipChanges > 0 && (
+                  <small title={`${progress.ipChanges} of ${progress.maxIpChanges} verified IP changes`}>
+                    {progress.ipChanges}/{progress.maxIpChanges} IP
+                  </small>
+                )}
+              </span>
             </>
           ) : <span className="recovery-idle">{!monitored ? "Not monitored" : monitoring ? "Watching" : "Paused"}</span>}
         </span>
@@ -356,6 +447,7 @@ function SessionInspector({
         )}
         <section className="inspector-section recovery-panel" aria-label="Session recovery progress">
           <h3>Recovery</h3>
+          {showProgress && <RouteTrack stage={progress.stage} />}
           <div role="status" aria-live="polite" aria-atomic="true">
             {showProgress ? <RecoveryStatus progress={progress} detailed /> : <strong className="recovery-summary">{!monitored ? "Not monitored" : snapshot.monitoring ? "Watching this session" : "Monitoring paused"}</strong>}
           </div>
@@ -805,7 +897,13 @@ function App() {
     new URLSearchParams(location.search).get("preview") === "1";
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY_SNAPSHOT);
   const [loaded, setLoaded] = useState(false);
-  const [view, setView] = useState<View>("sessions");
+  const [view, setView] = useState<View>(() => {
+    if (preview) {
+      const requested = new URLSearchParams(location.search).get("view");
+      if (requested === "relays" || requested === "activity") return requested;
+    }
+    return "sessions";
+  });
   const [scope, setScope] = useState("all");
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [search, setSearch] = useState("");
@@ -1332,11 +1430,6 @@ function App() {
         </header>
 
         <div className="route-bar">
-          <span
-            className={`route-symbol ${snapshot.vpnStatus === "connected" ? "connected" : ""}`}
-          >
-            <Globe2 size={20} strokeWidth={1.5} />
-          </span>
           <div className="route-copy">
             <strong>
               <i className={`route-dot ${snapshot.vpnStatus}`} />
