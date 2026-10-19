@@ -197,7 +197,7 @@ components:
     textColor: "{colors.running}"
     rounded: "{rounded.pill}"
     height: "10px"
-    width: "232px"
+    width: "240px"
   route-track:
     backgroundColor: "transparent"
     textColor: "{colors.ink-muted}"
@@ -367,11 +367,13 @@ The window is a fixed three-column frame that never scrolls as a page — only i
 
 **Bands.** Toolbar `66px` → route bar `66px` → view controls `56px` → the scrolling body → status bar `28px`. Every band is `flex: 0 0 auto`; only the body scrolls. The bands sit on `enamel-850` and the working area on `enamel-900`, so the deepest plane is the one the operator works in.
 
-**The session grid.** A row is `1fr | 232px | 64px | 12px` with a `16px` gap: identity, route, updated, chevron. Rows are `56px` tall, inset `12px` from the pane with `36px` of left padding to clear the monitoring mark. The identity cell carries the title on the first line with the session id in mono set to the right, and the activity state on the second; the route cell carries the lane and its label. The sticky column header uses the *same* grid declaration inside the *same* scroll container, so header and rows cannot drift apart.
+**The session grid.** A row is `1fr | 240px | 56px | 12px` with a `16px` gap: identity, route, updated, chevron. Rows are `56px` tall, inset `12px` from the pane with `36px` of left padding to clear the monitoring mark. The identity column is the flexible one — it takes whatever the window gives it and the title wraps rather than pushing anything else. The identity cell carries the title on the first line, and the activity state, tab, and session id on the second, the id in monospace. The sticky column header uses the *same* grid declaration and the *same* content box as the rows, so header and rows cannot drift apart.
 
-**The route column.** `232px`, fixed, so every lane starts and ends on the same x. The lane's stations sit on the column edges, so the first station lines up with the label under it and the last with the column rule.
+**The route column.** `240px`, fixed, so every lane starts and ends on the same x. The lane's stations sit on the column edges, so the first station lines up with the label under it and the last with the column rule. The updated time takes a narrow `56px` column of its own and the chevron the last, so there is no dead track between the diagram and the time.
 
-**The ruled sheet.** Every project group is separated by a hairline that runs the full width, with the project name, its source tag, and the project path in mono set on the rule. There are no cards and no floating group boxes.
+**The ruled sheet.** Every project group is separated by a hairline that runs the full width, and the group annotates from the left: folder, project name, source tag, session count, then the project path in monospace — a legend along the rule rather than a label pushed to the far edge. There are no cards and no floating group boxes.
+
+**The route bar.** The connection facts sit together on the left — status and host, then the public address — and the actions on the right, so the slack falls at the end of the band instead of between two things that belong together.
 
 **Relays.** A full-width table with a sticky header on the canvas colour; cells are `58px` tall. Numeric columns are right-aligned, the address column is monospace, and the address column is dropped below 1250px.
 
@@ -379,9 +381,9 @@ The window is a fixed three-column frame that never scrolls as a page — only i
 
 **Dialog.** `min(540px, 100vw − 36px)` wide, capped at `100dvh − 40px` with internal scrolling.
 
-**Responsive.** Width drives the layout:
-- `1250px` — rail `208px`, inspector `296px`, route column `200px`.
-- `1100px` — the updated-time column is dropped.
+**Responsive.** Width drives the layout, and the identity column flexes at every step so nothing can overflow:
+- `1250px` — rail `200px`, inspector `280px`, route column `208px`.
+- `1100px` — the updated-time column is dropped and the route column narrows to `190px`.
 - `950px` — rail `184px`, inspector `264px`, route column `172px`, country codes hidden.
 - `760px` — the rail collapses to a `62px` icon column, the inspector becomes a full-width panel below the list, and the route column narrows to `132px`.
 
@@ -429,12 +431,12 @@ Borders are directional where they appear at all: a dark top edge and a faint li
 - **States:** default is secondary ink with a faint icon; hover raises the ground; active is `enamel-800` with a lime icon. Section labels are `11px` weight 600 in sentence case — never uppercase, never tracked.
 
 ### Session Rows
-- **Shape:** `7px` radius, `56px` minimum height, `1fr | 232px | 64px | 12px`.
+- **Shape:** `7px` radius, `56px` minimum height, `1fr | 240px | 56px | 12px`.
 - **Background:** transparent at rest, `enamel-850` on hover, `enamel-700` with a strong rule when selected, marked by a `2px` porcelain inset on the leading edge.
-- **Identity:** the title in ink with the session id in monospace set to the right of it, and the activity state beneath. The identifier is present because the product's whole claim is exact delivery to one session, and an exact claim needs the exact id visible.
+- **Identity:** the title in ink, with the activity state, tab, and session id on the second line, the id in monospace. The identifier is present because the product's whole claim is exact delivery to one session, and an exact claim needs the exact id visible.
 
 ### The Route Line
-- **Shape:** a `232px` horizontal lane of six stations, `10px` tall, with the station markers sitting on the column edges.
+- **Shape:** a `240px` horizontal lane of six stations, `10px` tall, with the station markers sitting on the column edges.
 - **States:** a travelled station is a solid `#8fbe73` dot on a solid segment; the current station is a `9px` lime ring on a lime segment; a future station is a hollow dot on a hairline; a held terminus is amber; a broken terminus is a vermilion square with the following segment *removed*, so the line visibly stops.
 - **Rule:** the lane's presence is the signal that a session is in recovery. A session that is only being watched shows no lane at all.
 
