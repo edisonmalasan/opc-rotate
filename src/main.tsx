@@ -326,12 +326,9 @@ function SessionItem({
         onClick={onSelect}
       >
         <span className="session-item-copy">
-          <span className="session-title-line">
-            <strong title={sessionTitle(target.title)}>
-              {sessionTitle(target.title)}
-            </strong>
-            {target.sessionId && <code className="session-id">{target.sessionId}</code>}
-          </span>
+          <strong title={sessionTitle(target.title)}>
+            {sessionTitle(target.title)}
+          </strong>
           <small>
             <StateLabel state={target.state} error={target.lastError} />
             <span aria-hidden="true">·</span>
@@ -340,6 +337,9 @@ function SessionItem({
               <>
                 <span>·</span>Custom prompt
               </>
+            )}
+            {target.sessionId && (
+              <code className="session-id">· {target.sessionId}</code>
             )}
           </small>
         </span>
@@ -1216,10 +1216,10 @@ function App() {
             <span>
               {targets.length} {targets.length === 1 ? "session" : "sessions"}
             </span>
+            <small title={subtitle}>
+              {subtitle || "Project directory unavailable"}
+            </small>
           </span>
-          <small title={subtitle}>
-            {subtitle || "Project directory unavailable"}
-          </small>
         </div>
         {targets.map((target) => (
           <SessionItem

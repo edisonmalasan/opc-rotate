@@ -48,8 +48,8 @@
   --font-body: 0.875rem;
   --font-heading: 1.25rem;
 
-  --session-route-width: 232px;
-  --session-time-width: 64px;
+  --session-route-width: 240px;
+  --session-time-width: 56px;
   --shadow-soft: var(--shadow-soft);
   --shadow-lift: var(--shadow-lift);
   --shadow-modal: var(--shadow-modal);
@@ -477,7 +477,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 14px;
-  min-height: 66px;
+  min-height: 58px;
   flex: 0 0 auto;
   padding: 0 24px;
   border-bottom: 1px solid var(--rule);
@@ -485,7 +485,7 @@ button:focus-visible {
 }
 .route-copy {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   flex-direction: column;
   gap: 3px;
@@ -521,7 +521,8 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin-right: 12px;
+  margin-left: 28px;
+  margin-right: auto;
 }
 .route-address > span {
   color: var(--ink-dim);
@@ -658,7 +659,7 @@ button:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--session-route-width) var(--session-time-width) 12px;
   gap: 16px;
-  padding: 9px 26px 9px 36px;
+  padding: 9px 26px 9px 48px;
   color: var(--ink-dim);
   border-bottom: 1px solid var(--rule);
   font-size: var(--font-small);
@@ -680,16 +681,16 @@ button:focus-visible {
 .group-heading {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 16px;
-  padding: 16px 26px 6px 36px;
+  padding: 16px 26px 6px 48px;
   border-top: 1px solid var(--rule-soft);
 }
 .group-title {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 .group-title svg {
   color: var(--ink-faint);
@@ -721,14 +722,15 @@ button:focus-visible {
   font-weight: 550;
   white-space: nowrap;
 }
-.group-heading > small {
-  color: var(--ink-dim);
+.group-heading small {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--ink-faint);
   font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
   font-size: var(--font-caption);
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  max-width: 45%;
 }
 .session-entry {
   position: relative;
@@ -782,24 +784,14 @@ button:focus-visible {
   flex-direction: column;
   gap: 3px;
 }
-.session-title-line {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  min-width: 0;
-}
 .session-id {
-  margin-left: auto;
-  flex: 0 0 auto;
-  color: var(--ink-dim);
+  margin-left: 3px;
+  color: var(--ink-faint);
   font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
   font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.session-title-line > strong {
+.session-item-copy > strong {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -813,8 +805,11 @@ button:focus-visible {
   white-space: normal;
   line-height: 1.4;
 }
-.selected .session-title-line > strong {
+.selected .session-item-copy > strong {
   color: var(--ink-strong);
+}
+.selected .session-id {
+  color: var(--ink-dim);
 }
 .session-item-copy small {
   display: flex;
@@ -869,6 +864,7 @@ button:focus-visible {
   width: var(--session-route-width);
   flex: 0 0 var(--session-route-width);
   min-width: 0;
+  overflow: hidden;
 }
 .recovery-meta {
   display: flex;
@@ -971,6 +967,9 @@ button:focus-visible {
   min-width: 0;
 }
 .recovery-status.bare {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1188,8 +1187,6 @@ button:focus-visible {
   padding: 14px 20px;
 }
 .session-item time {
-  width: var(--session-time-width);
-  flex: 0 0 var(--session-time-width);
   color: var(--ink-dim);
   font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
   font-size: var(--font-caption);
@@ -2094,12 +2091,11 @@ button:focus-visible {
 
 @media (max-width: 1250px) {
   :root {
-    --session-route-width: 200px;
-    --session-time-width: 58px;
+    --session-route-width: 208px;
   }
   .sidebar {
-    width: 208px;
-    flex-basis: 208px;
+    width: 200px;
+    flex-basis: 200px;
   }
   .app-identity {
     padding-left: 16px;
@@ -2134,7 +2130,7 @@ button:focus-visible {
     padding-left: 32px;
   }
   .list-column-labels {
-    padding-left: 32px;
+    padding-left: 40px;
   }
   .group-heading {
     padding-left: 32px;
@@ -2145,7 +2141,7 @@ button:focus-visible {
 }
 @media (max-width: 1100px) {
   :root {
-    --session-route-width: 156px;
+    --session-route-width: 190px;
   }
   .session-item time,
   .list-column-labels > span:last-child {
@@ -2161,6 +2157,10 @@ button:focus-visible {
 @media (max-width: 950px) {
   :root {
     --session-route-width: 172px;
+  }
+  .sidebar {
+    width: 184px;
+    flex-basis: 184px;
   }
   .sidebar {
     width: 184px;
@@ -2357,6 +2357,13 @@ button:focus-visible {
     padding: 0 10px 0 32px;
     gap: 10px;
     grid-template-columns: minmax(0, 1fr) 132px;
+  }
+  .list-column-labels {
+    padding-left: 32px;
+  }
+  .session-recovery-column {
+    width: 132px;
+    flex-basis: 132px;
   }
   .session-item .session-state {
     font-size: var(--font-small);
