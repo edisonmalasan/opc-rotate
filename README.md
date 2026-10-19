@@ -4,7 +4,7 @@ A Windows desktop dashboard for live OpenCode work. Choose which sessions to mon
 
 [![Windows release check](https://github.com/edisonmalasan/opc-rotate/actions/workflows/windows.yml/badge.svg)](https://github.com/edisonmalasan/opc-rotate/actions/workflows/windows.yml) · [MIT license](LICENSE) · [Changelog](CHANGELOG.md)
 
-![OpenCode Recovery showing project-grouped sessions, monitoring choices, and a session inspector](docs/images/dashboard.jpg)
+![OpenCode Recovery showing project-grouped sessions, per-session recovery route lines, monitoring choices, and a session inspector](docs/images/dashboard.jpg)
 
 *Development preview with sample data. No live connection is shown.*
 
