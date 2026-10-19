@@ -45,7 +45,8 @@ Outcome: a source build and installer work on the target Windows setup.
 
 ## 3. Preview release preparation
 
-- [x] Replace the obsolete product brief with a release-oriented README, labeled sample screenshot, usage/troubleshooting guide, development guide, release checklist, changelog, contribution instructions, and security reporting guidance. Remove `PRODUCT.md` and its references from the project docs.
+- [x] Replace the obsolete product brief with a release-oriented README, labeled sample screenshot, usage/troubleshooting guide, development guide, release checklist, changelog, contribution instructions, and security reporting guidance. Remove the retired product brief and its references from the project docs.
+- [x] Record the product and the design system as durable artifacts. `PRODUCT.md` holds product purpose, capability and terminology truth, brand commitments, and the evidence boundaries; `DESIGN.md` holds the extracted tokens, component behavior, and visual guardrails for the incumbent charcoal/lime system. `src/styles.css` stays the implementation authority, and the tool-side sidecar stays in the ignored `.impeccable/` directory.
 - [x] Add the user-selected MIT license and package/installer metadata. Preserve third-party license notices.
 - [x] Pin the tested Node/Rust toolchains and enforce consistent npm/Cargo/Tauri versions. Build with locked dependencies and reject preview fixtures in production assets.
 - [x] Run a clean npm install, all 40 automated tests, formatting, dependency audit (no reported vulnerabilities), production build, and NSIS packaging locally. Generate an installer plus its matching SHA-256 checksum under ignored `release-artifacts/v0.1.0/`.

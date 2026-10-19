@@ -11,6 +11,7 @@ The Tauri application, Rust controller, active-session filtering, per-project Or
 | Concern | Source |
 | --- | --- |
 | Sidebar, session inspector, relay and activity views | `src/main.tsx`, `src/styles.css` |
+| Product record and design-system guardrails | `PRODUCT.md`, `DESIGN.md` |
 | Development-only sample data | `src/dev-preview.ts` (`?preview=1`, never a live controller) |
 | Dev server port selection | `scripts/tauri.mjs`, `vite.config.ts` |
 | State, polling, incident queue, recovery | `src-tauri/src/lib.rs` |
@@ -61,7 +62,7 @@ For populated browser UI checks, use the Vite URL with `?preview=1`; add `&empty
 ## Working method
 
 1. Read `docs/CONTEXT.md`, the relevant roadmap section, and directly affected source.
-2. Make a small, reviewable change. Apply the repository's Apple Design and Emil Design Engineering skills for the requested frontend pass.
+2. Make a small, reviewable change. Apply the repository's Apple Design and Emil Design Engineering skills for the requested frontend pass, and keep new UI inside the tokens and guardrails recorded in `DESIGN.md`.
 3. Run relevant builds and tests. Live VPN tests can interrupt the user's connection; run those only when necessary.
 4. Update the roadmap only for verified outcomes; label remaining gaps accurately.
 5. Stage logical groups, use conventional commits, and push each requested commit separately. Do not commit secrets, local settings, `node_modules`, `dist`, or `src-tauri/target`.
