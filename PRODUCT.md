@@ -46,7 +46,7 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - The shared service is a fallback for responding sessions, not for idle presence. Unknown execution status is never rendered as Idle.
 - A shared service that is gone is reported as gone rather than as a failed request, and it cannot protect any work: a refused connection means no shared-service session is live, so it does not block a route change. A service that answers and reports an error, or that times out, still blocks one.
 - A session that finished its turn is reported as **Worker Idle**, together with the number of child sessions still executing. Both come from the live CLI plugin alone: only that client can see a session's child sessions and can tell the operator's own message apart from one the app delivered. The shared-service fallback keeps its previous behavior and reports only rate limits, busy, and idle — never a finished turn.
-- The plugin remembers the prompts it delivered itself, so a stop is continued once, and only again after the operator sends new input.
+- The plugin remembers the prompts it delivered itself, so a stop is continued once, and only again after the operator sends new input. A session that has already been continued for the stop it is on says **Continued**, and the inspector explains that it waits for new operator input, so a quiet session never looks unhandled.
 
 **Monitoring selection**
 - Rules exist per session and per terminal. A session override wins over its terminal rule; a new tab inherits its terminal rule.
@@ -75,7 +75,7 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 
 **Terminology** (fixed product language)
 - Activity: **Idle**, **Working**, **Rate limited**, **Provider blocked**, **Worker Idle**, **Status unavailable**, **Selected tab**, **Background tab**.
-- Recovery: **queued**, **waiting for work**, **connecting**, **verifying IP**, **waiting for idle**, **sending a prompt**, **prompt sent**, **stopped/uncertain**, **Not monitored**, **Stopped · 2-IP limit**, **Eligible in …s**, **Awaiting next check**.
+- Recovery: **queued**, **waiting for work**, **connecting**, **verifying IP**, **waiting for idle**, **sending a prompt**, **prompt sent**, **continued**, **stopped/uncertain**, **Not monitored**, **Stopped · 2-IP limit**, **Eligible in …s**, **Awaiting next check**.
 - A session can stay **Rate limited** while its recovery is **Stopped**: the provider failure and the app's recovery process are separate states.
 - **Prompt sent** confirms a receipt, not that the provider accepted the next model call.
 - **Worker Idle** means the session finished its turn and is waiting for the operator. A session with a live child session is still working, not worker idle.

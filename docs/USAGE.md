@@ -36,6 +36,8 @@ All choices are saved. The app-wide mode starts on **Worker Idle**, so a fresh i
 
 **Worker Idle** watches for a session that finished its turn and is waiting for you. Recovery sends the continuation prompt to that session and does nothing else: it connects no relay, changes no public IP, and uses none of the two IP changes. The session's activity is shown as **Worker Idle**.
 
+A finished turn is continued **once**. After the prompt is delivered the session is quiet again, and the recovery column reads **Continued** rather than **Prompt sent**; the inspector says that it is continued again after you send a new message in that session. This is deliberate: continuing every finished turn would have the app prompt a session, wait for it to finish, and prompt it again, forever.
+
 The two modes are exclusive per session. A session watched for finished turns that hits a rate limit is still shown as **Rate limited**, but it is not recovered automatically, because a prompt cannot clear a rate limit. A manual recovery follows the session's mode: **Continue session** queues a prompt-only continuation, and **Recover session** queues a route change.
 
 Changing one session's mode cancels the other kind of work queued for it. A session switched to **Worker Idle** no longer keeps a queued route change, and one switched to **Rate limits** no longer keeps a queued continuation.
@@ -62,7 +64,7 @@ When no session on screen is watched for rate limits, the rate-limit parts of th
 
 A recovering session shows a route line of six stations: **Queued**, **Idle wait**, **New route**, **Verify IP**, **Deliver**, **Receipt**. In **Rate limits** mode the whole route is traversed. In **Worker Idle** mode the two relay stations, **New route** and **Verify IP**, are drawn as short dashes and the line is broken across them, so the route that was not taken is visible. A failure breaks the line where it happened: a failed route change breaks at **New route**, a failed continuation breaks at **Deliver**. The live station breathes while a recovery is moving; reduced motion stops the pulse.
 
-**Preview.** The browser preview (`npm run dev`, then `?preview=1`) opens on the shipped default: **Worker Idle**, no route bar, a continuation in flight and one queued. Add `&rate=1` for **Rate limits** with the route bar and the **Provider errors** filter visible, `&recovery=1` for the rate-limit route diagram in its four states — connecting, waiting, receipt confirmed, and stopped — `&empty=1` for empty states, and `&view=relays` or `&view=activity` for the other two views. Preview data is in-memory and never reaches a live client.
+**Preview.** The browser preview (`npm run dev`, then `?preview=1`) opens on the shipped default: **Worker Idle**, no route bar, a continuation in flight, one queued, and one already continued and waiting for new input. Add `&rate=1` for **Rate limits** with the route bar and the **Provider errors** filter visible, `&recovery=1` for the rate-limit route diagram in its four states — connecting, waiting, receipt confirmed, and stopped — `&empty=1` for empty states, and `&view=relays` or `&view=activity` for the other two views. Preview data is in-memory and never reaches a live client.
 
 ## Recovery sequence
 
