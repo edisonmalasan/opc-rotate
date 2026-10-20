@@ -382,23 +382,31 @@ function SessionItem({
         onClick={onSelect}
       >
         <span className="session-item-copy">
-          <strong title={sessionTitle(target.title)}>
-            {sessionTitle(target.title)}
-          </strong>
+          <span className="session-title-line">
+            <strong title={sessionTitle(target.title)}>
+              {sessionTitle(target.title)}
+            </strong>
+            {target.sessionId && (
+              <code className="session-id">{target.sessionId}</code>
+            )}
+            <em className="group-source">
+              {target.source === "orca" ? "Orca" : "OpenCode"}
+            </em>
+          </span>
           <small>
             <StateLabel state={target.state} error={target.lastError} />
-            <span className="meta-part">· {tabLabel(target)}</span>
-            {target.promptOverride && (
-              <span className="meta-part">· Custom prompt</span>
-            )}
             {(target.workingSubagents ?? 0) > 0 && (
               <span className="meta-part subagent-count">
                 · <b>{target.workingSubagents}</b> subagent
                 {target.workingSubagents === 1 ? "" : "s"} working
               </span>
             )}
-            {target.sessionId && (
-              <code className="session-id">· {target.sessionId}</code>
+            <span className="meta-part">· {tabLabel(target)}</span>
+            <span className="meta-part session-project">
+              · {projectName(target.project)}
+            </span>
+            {target.promptOverride && (
+              <span className="meta-part">· Custom prompt</span>
             )}
           </small>
         </span>
@@ -1373,21 +1381,9 @@ function App() {
       <section
         className="session-group"
         key={`${other ? "other" : "orca"}:${subtitle}`}
+        role="group"
         aria-label={`${title} · ${other ? "Other OpenCode sessions" : "Orca terminals"}`}
       >
-        <div className="group-heading">
-          <span className="group-title">
-            <Folder size={14} />
-            <strong>{title}</strong>
-            <em className="group-source">{other ? "OpenCode" : "Orca"}</em>
-            <span>
-              {targets.length} {targets.length === 1 ? "session" : "sessions"}
-            </span>
-            <small title={subtitle}>
-              {subtitle || "Project directory unavailable"}
-            </small>
-          </span>
-        </div>
         {targets.map((target) => (
           <SessionItem
             key={target.id}
@@ -1472,7 +1468,7 @@ function App() {
         </nav>
         <div className="project-nav-scroll">
           <div className="nav-section-label">
-            <span>Orca sessions</span>
+            <span>Orca projects</span>
             <Command size={12} />
           </div>
           <nav className="project-nav">
@@ -1507,7 +1503,7 @@ function App() {
             )}
           </nav>
           <div className="nav-section-label second">
-            <span>Other sessions</span>
+            <span>Other projects</span>
             <Terminal size={12} />
           </div>
           <nav className="project-nav">
@@ -1695,7 +1691,7 @@ function App() {
               <div className="session-list-pane">
                 <div className="session-groups" onKeyDown={moveSession}>
                   <div className="list-column-labels">
-                    <span>Session / project</span>
+                    <span>Session</span>
                     <span>Recovery</span>
                     <span>Updated</span>
                   </div>

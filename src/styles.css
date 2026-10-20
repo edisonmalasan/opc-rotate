@@ -678,42 +678,10 @@ button:focus-visible {
 .session-group + .session-group {
   margin-top: 6px;
 }
-.group-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  padding: 16px 26px 6px 48px;
-  border-top: 1px solid var(--rule-soft);
-}
-.group-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  overflow: hidden;
-}
-.group-title svg {
-  color: var(--ink-faint);
-  stroke-width: 1.5;
-  flex: 0 0 auto;
-}
-.group-title strong {
-  color: var(--ink);
-  font-size: var(--font-label);
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.group-title > span {
-  margin-left: 2px;
-  color: var(--ink-dim);
-  font-size: var(--font-small);
-}
+/* The source chip rides on each row now that the list has no heading. */
 .group-source {
   flex: 0 0 auto;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border: 1px solid var(--rule);
   border-radius: 3px;
   color: var(--ink-dim);
@@ -722,15 +690,10 @@ button:focus-visible {
   font-weight: 550;
   white-space: nowrap;
 }
-.group-heading small {
-  flex: 0 1 auto;
-  min-width: 0;
+.session-project {
   color: var(--ink-faint);
   font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
   font-size: var(--font-caption);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
 }
 .session-entry {
   position: relative;
@@ -785,13 +748,27 @@ button:focus-visible {
   gap: 3px;
 }
 .session-id {
-  margin-left: 3px;
   color: var(--ink-faint);
   font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
   font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.session-item-copy > strong {
+.session-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+.session-title-line .group-source {
+  margin-left: auto;
+}
+.session-title-line .session-id {
+  margin-left: auto;
+  padding-right: 10px;
+}.session-title-line > strong {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -805,7 +782,7 @@ button:focus-visible {
   white-space: normal;
   line-height: 1.4;
 }
-.selected .session-item-copy > strong {
+.selected .session-title-line > strong {
   color: var(--ink-strong);
 }
 .selected .session-id {
@@ -2137,6 +2114,14 @@ button:focus-visible {
 }
 
 /* ------------------------------------------------------------ responsive -- */
+
+/* The session id is a lookup detail: it appears only where the identity
+   column has room for it without squeezing the title. */
+@media (max-width: 1320px) {
+  .session-title-line .session-id {
+    display: none;
+  }
+}
 
 @media (max-width: 1250px) {
   :root {
