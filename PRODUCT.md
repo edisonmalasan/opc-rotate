@@ -10,17 +10,17 @@ web
 
 A solo operator on their own Windows workstation. The same person runs long-lived OpenCode v2 sessions in Orca terminals and in other terminals, and works alongside them. Their provider applies IP-sensitive limits, so a session that is doing real work can be cut off mid-task by a rate-limit/quota failure or by the free-tier client gate.
 
-Their job is to keep that affected work alive: notice the failure, get a new public IP, and let the exact session continue from where it stopped — without hand-editing terminals, without losing the session, and without a second person watching the machine.
+Their job is to keep that affected work alive: notice the failure, get a new public IP, and let the exact session continue from where it stopped — without hand-editing terminals, without losing the session, and without a second person watching the machine. The same operator also has sessions that simply finish a turn and wait; those are continued with a prompt, and the network is left alone.
 
 This is a one-operator tool, not a product for a general audience. Density, speed of recognition, and predictable behavior matter more than onboarding, discoverability, or collaborative features.
 
 ## Product Purpose
 
-OpenCode Recovery watches live OpenCode sessions and completes a recovery for the ones that were blocked by an IP-sensitive provider failure.
+OpenCode Recovery watches live OpenCode sessions and completes a recovery for the ones that were blocked by an IP-sensitive provider failure. A second watcher continues a session whose turn merely ended, with a prompt and no network change.
 
-It exists because the failure is invisible: a terminal looks idle, work has stopped, and the operator has no way to tell that a provider blocked the request rather than the model simply finishing. The app makes that failure visible, and then completes the recovery end to end — wait for the machine to go quiet, change the public IP through a VPN relay, verify the change, and deliver a continuation to the exact session that failed.
+It exists because the failure is invisible: a terminal looks idle, work has stopped, and the operator has no way to tell that a provider blocked the request rather than the model simply finishing. The app makes that failure visible, and then completes the recovery end to end — wait for the machine to go quiet, change the public IP through a VPN relay, verify the change, and deliver a continuation to the exact session that failed. A turn that ended cleanly is continued the same way minus the relay: one prompt, delivered to that exact session, with the public IP untouched.
 
-Success means the affected session resumes work after a verified IP change, with no duplicated prompt and no lost context. When recovery cannot be trusted, success is the app saying so plainly — surfacing the uncertainty for inspection rather than pretending, and never silently resending work.
+Success means the affected session resumes work — after a verified IP change for a provider failure, or after a single prompt for a turn that ended — with no duplicated prompt and no lost context. When recovery cannot be trusted, success is the app saying so plainly — surfacing the uncertainty for inspection rather than pretending, and never silently resending work.
 
 ## Positioning
 
@@ -44,14 +44,20 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - Leases refresh every two seconds and expire after eight seconds. A closed tab disappears but an already observed incident stays visible, labeled **Closed tab**, with no delivery route until it is reopened.
 - Sessions are deduplicated by exact session ID, never by project directory. Orca and outside clients are listed as separate sources.
 - The shared service is a fallback for responding sessions, not for idle presence. Unknown execution status is never rendered as Idle.
+- A session that finished its turn is reported as **Turn ended**, together with the number of child sessions still executing. Both come from the live CLI plugin alone: only that client can see a session's child sessions and can tell the operator's own message apart from one the app delivered. The shared-service fallback keeps its previous behavior and reports only rate limits, busy, and idle — never a finished turn.
+- The plugin remembers the prompts it delivered itself, so a stop is continued once, and only again after the operator sends new input.
 
 **Monitoring selection**
 - Rules exist per session and per terminal. A session override wins over its terminal rule; a new tab inherits its terminal rule.
 - Choices are persisted. Unchecked sessions stay visible as **Not monitored** and cannot queue or receive recovery. Unchecking prunes queued work; pausing the master switch clears pending continuations.
 - Busy-work protection covers every live session, monitored or not, because VPN routing is machine-wide. Unknown execution status also blocks a change.
+- Every session follows one of two watcher modes: **Rate limits**, the default, or **Turn ended**. A session's own choice wins over the app-wide default, and both are persisted.
 
 **Recovery**
 - Triggers: failed, idle provider events containing a rate-limit or quota error, and the specific message "OpenCode's free tier can only be used from within OpenCode." The client-gate match tolerates wrapped whitespace and curly apostrophes and ignores HTTP status. Ordinary permission errors and assistant prose are excluded.
+- In the **Turn ended** mode the trigger is a cleanly finished turn instead of a provider failure. A turn-ended recovery sends the continuation prompt only: it connects no relay, changes no public IP, and consumes none of the two verified IP changes.
+- The two modes are exclusive per session. A rate-limited session watched for finished turns is still displayed as rate limited, but it is not recovered automatically, because a prompt cannot clear a rate limit. A manual recovery started from the session inspector is unchanged.
+- The turn-ended mode carries its own default continuation prompt, "Continue where you left off.", separate from the rate-limit prompt. A per-session prompt override wins over either default.
 - Sequence: wait for other detected work to go idle, rank eligible relays by low ping and high advertised speed, try at most five relays with up to twenty seconds per connection, require both a connected SoftEther account and a changed public IPv4 address checked through ipify, then deliver the continuation to the exact affected session while preserving the selected tab.
 - A session stops after two verified IP changes. There is no timed reset, and the count survives restarts. A manual action queues another attempt that still waits for busy work and still verifies a changed IP.
 - Requests are claimed once, receipts come back from the client, and the incident guard is persisted before transport. An ambiguous submission is shown for inspection and never retried automatically. Unknown execution status blocks VPN changes.
@@ -60,12 +66,16 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 **Relays and history**
 - The relay list refreshes every five minutes and on demand, and can be sorted by recommendation, ping, or line speed. A preferred relay becomes the next first candidate.
 - Activity records connection changes, prompt receipts, and failures, and is the place to look when a recovery stops or a delivery is uncertain.
+- The route bar — connection state, public IP, disconnect, and the relay list link — is shown only while something on screen depends on the VPN route: a relay is connected, a recovery is changing the public IP, or a session waits on a rate-limit recovery. With no connected relay and only turn-ended watching, it disappears, and the relay list stays reachable from the sidebar.
 
 **Terminology** (fixed product language)
-- Activity: **Idle**, **Working**, **Rate limited**, **Provider blocked**, **Status unavailable**, **Selected tab**, **Background tab**.
+- Activity: **Idle**, **Working**, **Rate limited**, **Provider blocked**, **Turn ended**, **Status unavailable**, **Selected tab**, **Background tab**.
 - Recovery: **queued**, **waiting for work**, **connecting**, **verifying IP**, **waiting for idle**, **sending a prompt**, **prompt sent**, **stopped/uncertain**, **Not monitored**, **Stopped · 2-IP limit**, **Eligible in …s**, **Awaiting next check**.
 - A session can stay **Rate limited** while its recovery is **Stopped**: the provider failure and the app's recovery process are separate states.
 - **Prompt sent** confirms a receipt, not that the provider accepted the next model call.
+- **Turn ended** means the session finished its turn and is waiting for the operator. A session with a live child session is still working, not turned ended.
+- **2 subagents working** counts the child sessions of that session that are still executing.
+- A turn-ended recovery changes no IP, so its route line leaves out the relay and IP-verification stations.
 
 **Platform and environment**
 - Windows x64 desktop app (Tauri 2), with a React 19 + TypeScript + Vite 6 interface and a Rust 2021 controller. The interface is a web UI rendered in a native window.
@@ -95,13 +105,15 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - `docs/images/dashboard.jpg` — labeled development preview of the workspace with sample data and no live connection.
 - `src/dev-preview.ts` — development-only fixture data, reached through `?preview=1` in the browser; excluded from release assets by `scripts/check-release.mjs`.
 - `release-artifacts/v0.1.0/` — built NSIS installer and matching `SHA256SUMS.txt` (gitignored, not published).
-- Automated coverage: 9 Node presence-plugin tests plus Rust unit and mock HTTP tests alongside the source, run by `npm test`.
+- Automated coverage: 11 Node presence-plugin tests plus Rust unit and mock HTTP tests alongside the source, run by `npm test`.
+- Verified in the browser preview: both watcher modes and their inspector controls, the **Turn ended** activity state, the subagent count, the turn-ended prompt default, and the route bar's absence while nothing depends on the VPN route.
 - Verified live, in the running native app: discovery of idle and background tabs in Orca and outside clients, project grouping, and detection of the free-tier client-gate provider error with monitoring paused.
 - Verified live earlier, using the former terminal-send transport: a recovery that skipped a failed relay candidate.
 
 **Absences — future work must not fabricate**
 - No public GitHub release has been published; version 0.1.0 is a preview candidate.
 - Live continuation through the current exact-session transport is unverified for Orca, outside clients, and background tabs. Live VPN verification is still pending.
+- The turn-ended watcher mode has not been exercised against a live OpenCode client. Its code, tests, and browser preview are verified; the live behavior is not.
 - Clean-machine install, upgrade, and uninstall smoke tests have not been run.
 - The installer is unsigned and has no automatic updater.
 - There are no customers, testimonials, case studies, benchmarks, pricing, or licensing claims beyond the MIT license.

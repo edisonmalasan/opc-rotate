@@ -19,13 +19,40 @@ SoftEther is a **separate installed dependency** in this preview. Its service an
 4. Choose which work to recover. All sessions are included initially; use the row checkboxes or **Monitor this terminal** in the inspector. A terminal rule includes new tabs; individual session choices override it. Choices are saved.
 5. Turn on **Monitoring** when ready. It starts off on a fresh install and restores your saved preference on subsequent launches.
 
-**Idle** means the session is live but not responding. **Working** means it is responding. **Rate limited** or **Provider blocked** describes the latest qualifying provider failure. This appears beneath the session title; the separate **Recovery** column shows what Recovery is doing. **Status unavailable** means execution status could not be established. **Selected tab** describes the tab shown in its terminal, independently of whether it is working. The **Provider errors** filter includes affected sessions even if recovery is stopped or they are not monitored.
+**Idle** means the session is live but not responding. **Working** means it is responding. **Rate limited** or **Provider blocked** describes the latest qualifying provider failure. **Turn ended** means the session finished its turn and is waiting for you. This appears beneath the session title; the separate **Recovery** column shows what Recovery is doing. **Status unavailable** means execution status could not be established. **Selected tab** describes the tab shown in its terminal, independently of whether it is working. The **Provider errors** filter includes affected sessions even if recovery is stopped or they are not monitored.
 
 Unchecked sessions stay visible as **Not monitored**. They cannot trigger recovery or receive its prompts. Unchecking removes queued work; a prompt already submitted cannot be recalled. Pausing Monitoring clears pending continuations without changing your selections. **Recover session** is a manual action for included sessions and works while automatic monitoring is paused.
 
+## Watcher modes
+
+Every session is watched for one of two things. The mode is chosen in the session inspector's **Monitoring** section:
+
+- **Watch this session for** sets the mode of the selected session. It overrides the app-wide default for that session only.
+- **Default for all sessions** sets the mode every session follows unless it overrides it. It starts on **Rate limits**.
+
+Both choices are saved. Changing the default for all sessions cancels recoveries that are already queued.
+
+**Rate limits** is the provider-failure watcher. When a session hits a rate-limit or quota failure, or the free-tier client gate, Recovery waits for the machine to go quiet, changes the public IP through a VPN relay, verifies the new address, and only then sends the continuation prompt. The limit of two verified IP changes per session applies to this mode.
+
+**Turn ended** watches for a session that finished its turn and is waiting for you. Recovery sends the continuation prompt to that session and does nothing else: it connects no relay, changes no public IP, and uses none of the two IP changes.
+
+The two modes are exclusive per session. A session watched for finished turns that hits a rate limit is still shown as **Rate limited**, but it is not recovered automatically, because a prompt cannot clear a rate limit. **Recover session** in the inspector still starts the full manual recovery, and that path is unchanged.
+
+The turn-ended mode has its own default continuation prompt, stored separately from the rate-limit prompt:
+
+> Continue where you left off.
+
+A session's own prompt override wins over either default. The sidebar's **Continuation prompt** edits the rate-limit default; the session inspector's **Continuation prompt** editor overrides it for that session only.
+
+**Subagents.** The live OpenCode plugin reports how many child sessions of a session are still executing. The session row shows the count, for example **2 subagents working**. A session with a live subagent is not treated as finished, so its parent is not continued while a child session is still working.
+
+**Turn ended** and the subagent count come from the live OpenCode CLI plugin only, because only that client can see a session's child sessions and can tell your own message apart from one Recovery delivered. The shared-service fallback, used when no live client is present, reports rate limits, busy, and idle; it never reports a finished turn, and a session it reports is never continued automatically.
+
+**The route bar** — the connection state, public IP, **Disconnect**, and **View relays** — appears only while something on screen depends on the VPN route: a relay is connected, a recovery is changing the public IP, or a session is waiting on a rate-limit recovery. In **Turn ended** mode with no connected relay the bar disappears entirely; the relay list stays reachable from the sidebar.
+
 ## Recovery sequence
 
-Recovery recognizes failed, idle provider events containing a rate-limit/quota error, or the specific message:
+The **Rate limits** watcher recognizes failed, idle provider events containing a rate-limit/quota error, or the specific message:
 
 > OpenCode's free tier can only be used from within OpenCode.
 
@@ -37,13 +64,15 @@ The latter match accepts wrapped whitespace and curly apostrophes, regardless of
 4. Send the continuation to the exact affected session ID through its live CLI plugin, preserving the currently selected tab. Busy targets wait on the verified connection instead of causing another rotation.
 5. Stop if the error persists after **two verified IP changes** for that session. Record the result in **Activity**.
 
+The **Turn ended** mode runs only the delivery step: it sends the continuation prompt to the exact session and leaves the relay, the public IP, and the IP-change count alone.
+
 Request claims, SDK receipts, and a persisted incident guard prevent automatic duplicate submissions. An ambiguous submission is not retried automatically; inspect the session before taking another action. The app touches only profiles named with its `OPCRotate_` prefix and refuses to replace an unrelated connected SoftEther profile.
 
-The default continuation prompt is:
+The default continuation prompt for a rate-limit recovery is:
 
 > Continue from where you stopped after the rate limit
 
-Edit it with **Continuation prompt** in the sidebar, or set a session override in its inspector. Custom prompts survive updates.
+Edit it with **Continuation prompt** in the sidebar, or set a session override in its inspector. Custom prompts survive updates. The **Turn ended** mode has its own default, "Continue where you left off."; edit it with **Edit default** under the prompt in the inspector, where the default for the session's current mode is shown. A session override wins over either default.
 
 ### Retry timing and per-session progress
 
@@ -74,6 +103,7 @@ The automatic limit is two verified IP changes per session. There is no timed re
 | Recovery waits despite excluded sessions | Working sessions still protect the machine's network connection. Wait for them to become idle. |
 | IP changed but the provider still rejects work | Review Activity and the original provider error. IPv4 verification does not verify IPv6 egress; changing IP does not guarantee the provider will accept the request. |
 | Prompt delivery is uncertain | Inspect the affected OpenCode session. The app avoids an automatic retry that could duplicate work. |
+| A finished turn is never continued | Turn-ended detection needs the live OpenCode CLI plugin. The shared-service fallback reports rate limits, busy, and idle only, and never continues a session automatically. |
 
 Leases refresh every two seconds and expire after eight seconds. Closed tabs disappear; already observed recovery incidents can remain labeled **Closed tab**, with no delivery route until reopened. Connected private-service clients work through their live plugin; arbitrary private endpoints without a live client are not discovered.
 
@@ -93,6 +123,8 @@ To remove Recovery, first disconnect its VPN through the dashboard, quit Recover
 ## Preview limitations
 
 - The new exact-session continuation transport has automated coverage but still needs a live recovery check for Orca, outside clients, and background tabs. Earlier live recovery used the previous terminal-send transport.
+- The **Turn ended** watcher has automated coverage and a browser preview check, but no live check against a real OpenCode client yet.
+- The shared-service fallback never reports a finished turn and never continues a session automatically. Turn-ended recovery only happens for sessions reported by a live CLI client.
 - A clean-PC installation and upgrade/uninstall smoke test remain pending.
 - The installer is currently unsigned; Windows may show an unknown-publisher warning. No automatic updater is configured.
 - Egress verification covers IPv4 only. A provider using IPv6 outside the VPN may still reject requests.
