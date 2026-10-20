@@ -371,9 +371,9 @@ The window is a fixed three-column frame that never scrolls as a page — only i
 
 **The route column.** `240px`, fixed, so every lane starts and ends on the same x. The lane's stations sit on the column edges, so the first station lines up with the label under it and the last with the column rule. The updated time takes a narrow `56px` column of its own and the chevron the last, so there is no dead track between the diagram and the time.
 
-**The ruled sheet.** Every project group is separated by a hairline that runs the full width, and the group annotates from the left: folder, project name, source tag, session count, then the project path in monospace — a legend along the rule rather than a label pushed to the far edge. There are no cards and no floating group boxes.
+**The flat sheet.** The list is a flat run of session rows: no project headings, no cards, no group boxes. The rail already groups by project and by source, so repeating that structure in the list only produced the same project name twice with two different tags. Each row therefore names its own project and carries a source badge on the title line, and the project path lives in the inspector. The rail's sections are **Orca projects** and **Other projects**, because that is what they list.
 
-**The route bar.** The connection facts sit together on the left — status and host, then the public address — and the actions on the right, so the slack falls at the end of the band instead of between two things that belong together.
+**The route bar.** The connection facts sit together on the left - status and host, then the public address - and the actions on the right, so the slack falls at the end of the band instead of between two things that belong together.
 
 **Relays.** A full-width table with a sticky header on the canvas colour; cells are `58px` tall. Numeric columns are right-aligned, the address column is monospace, and the address column is dropped below 1250px.
 

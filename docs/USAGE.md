@@ -15,7 +15,7 @@ SoftEther is a **separate installed dependency** in this preview. Its service an
 
 1. Open your existing OpenCode terminals, with `opencode` or `opencode --auto`, inside Orca or another terminal.
 2. Start Recovery. It installs its own small OpenCode CLI plugin; your terminals remain open. If a terminal is missing, reopen that OpenCode client once to load the plugin.
-3. Check the **Orca sessions** and **Other sessions** project lists. Every live tab appears beneath its project folder, including idle and background tabs.
+3. Check the **Orca projects** and **Other projects** lists in the rail. Every live tab appears as a row in the session list, including idle and background tabs, and each row names its own project and source.
 4. Choose which work to recover. All sessions are included initially; use the row checkboxes or **Monitor this terminal** in the inspector. A terminal rule includes new tabs; individual session choices override it. Choices are saved.
 5. Turn on **Monitoring** when ready. It starts off on a fresh install and restores your saved preference on subsequent launches.
 

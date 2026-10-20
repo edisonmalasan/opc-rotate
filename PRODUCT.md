@@ -107,7 +107,7 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - `release-artifacts/v0.1.0/` — built NSIS installer and matching `SHA256SUMS.txt` (gitignored, not published).
 - Automated coverage: 11 Node presence-plugin tests plus Rust unit and mock HTTP tests alongside the source, run by `npm test`.
 - Verified in the browser preview: both watcher modes and their inspector controls, the **Turn ended** activity state, the subagent count, the turn-ended prompt default, and the route bar's absence while nothing depends on the VPN route.
-- Verified live, in the running native app: discovery of idle and background tabs in Orca and outside clients, project grouping, and detection of the free-tier client-gate provider error with monitoring paused.
+- Verified live, in the running native app: discovery of idle and background tabs in Orca and outside clients, project grouping in the rail, and detection of the free-tier client-gate provider error with monitoring paused.
 - Verified live earlier, using the former terminal-send transport: a recovery that skipped a failed relay candidate.
 
 **Absences — future work must not fabricate**
