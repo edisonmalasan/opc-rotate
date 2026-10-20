@@ -4,8 +4,11 @@ pub const DEFAULT_PROMPT: &str = "Continue from where you stopped after the rate
 pub const DEFAULT_CONTINUE_PROMPT: &str = "Continue where you left off.";
 /// Watch for provider rate-limit failures and recover by changing the public IP.
 pub const WATCH_RATE_LIMIT: &str = "rate-limit";
-/// Watch for a finished turn and continue it with a prompt, without changing the IP.
-pub const WATCH_CONTINUE: &str = "continue";
+/// Watch for a worker that has gone idle and continue it with a prompt, without
+/// changing the IP.
+pub const WATCH_WORKER_IDLE: &str = "worker-idle";
+/// Follow whatever the app-wide default says.
+pub const WATCH_DEFAULT: &str = "default";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,7 +110,7 @@ pub struct Settings {
 }
 
 fn default_watcher() -> String {
-    WATCH_RATE_LIMIT.into()
+    WATCH_WORKER_IDLE.into()
 }
 
 fn default_continue_prompt() -> String {
@@ -157,16 +160,37 @@ impl Settings {
     }
 
     /// The watcher mode that applies to a session: its own choice, then the
-    /// app-wide default.
+    /// app-wide default. A session set to follow the default has no choice of
+    /// its own.
     pub fn watcher_for(&self, target: &SessionTarget) -> &str {
-        self.session_watcher
-            .get(&target.id)
-            .map(String::as_str)
-            .unwrap_or(self.watcher.as_str())
+        match self.session_watcher.get(&target.id).map(String::as_str) {
+            Some(mode) if mode != WATCH_DEFAULT => mode,
+            _ => self.watcher.as_str(),
+        }
     }
 
-    pub fn watches_continue(&self, target: &SessionTarget) -> bool {
-        self.watcher_for(target) == WATCH_CONTINUE
+    pub fn watches_worker_idle(&self, target: &SessionTarget) -> bool {
+        self.watcher_for(target) == WATCH_WORKER_IDLE
+    }
+
+    /// Whether anything at all still needs the public IP to change.
+    pub fn rate_limit_watchers(&self, targets: &[SessionTarget]) -> bool {
+        self.watcher == WATCH_RATE_LIMIT
+            || targets
+                .iter()
+                .any(|target| self.watcher_for(target) == WATCH_RATE_LIMIT)
+    }
+
+    /// Accepts the older name for the worker-idle mode.
+    pub fn migrate_watcher(&mut self) {
+        for mode in self.session_watcher.values_mut() {
+            if mode == "continue" {
+                *mode = WATCH_WORKER_IDLE.into();
+            }
+        }
+        if self.watcher == "continue" {
+            self.watcher = WATCH_WORKER_IDLE.into();
+        }
     }
 }
 
@@ -179,7 +203,7 @@ impl Default for Settings {
             session_terminals: Default::default(),
             global_prompt: DEFAULT_PROMPT.to_string(),
             prompt_overrides: Default::default(),
-            watcher: WATCH_RATE_LIMIT.to_string(),
+            watcher: WATCH_WORKER_IDLE.to_string(),
             session_watcher: Default::default(),
             continue_prompt: DEFAULT_CONTINUE_PROMPT.to_string(),
             managed_profile: None,
@@ -299,7 +323,8 @@ mod tests {
     #[test]
     fn watcher_precedence_prefers_the_session_then_the_global_default() {
         let mut settings = Settings::default();
-        assert_eq!(settings.watcher, WATCH_RATE_LIMIT);
+        // A fresh install watches finished turns.
+        assert_eq!(settings.watcher, WATCH_WORKER_IDLE);
         assert_eq!(settings.continue_prompt, DEFAULT_CONTINUE_PROMPT);
 
         let session = SessionTarget {
@@ -309,38 +334,59 @@ mod tests {
             ..Default::default()
         };
         // With no override the global default applies.
-        assert_eq!(settings.watcher_for(&session), WATCH_RATE_LIMIT);
-        assert!(!settings.watches_continue(&session));
+        assert_eq!(settings.watcher_for(&session), WATCH_WORKER_IDLE);
+        assert!(settings.watches_worker_idle(&session));
 
-        settings.watcher = WATCH_CONTINUE.into();
+        settings.watcher = WATCH_RATE_LIMIT.into();
         // A session with no override follows the global default.
-        assert_eq!(settings.watcher_for(&session), WATCH_CONTINUE);
-        assert!(settings.watches_continue(&session));
+        assert_eq!(settings.watcher_for(&session), WATCH_RATE_LIMIT);
+        assert!(!settings.watches_worker_idle(&session));
 
         settings
             .session_watcher
             .insert(session.id.clone(), WATCH_RATE_LIMIT.into());
         // The session's own choice wins over the global default.
         assert_eq!(settings.watcher_for(&session), WATCH_RATE_LIMIT);
-        assert!(!settings.watches_continue(&session));
+        assert!(!settings.watches_worker_idle(&session));
 
         // A sibling with no override still follows the global default.
         let sibling = SessionTarget {
             id: "api:two".into(),
             ..session.clone()
         };
-        assert_eq!(settings.watcher_for(&sibling), WATCH_CONTINUE);
-        assert!(settings.watches_continue(&sibling));
+        assert_eq!(settings.watcher_for(&sibling), WATCH_RATE_LIMIT);
+        assert!(!settings.watches_worker_idle(&sibling));
+
+        // A session set to follow the default has no choice of its own.
+        settings
+            .session_watcher
+            .insert(sibling.id.clone(), WATCH_DEFAULT.into());
+        assert_eq!(settings.watcher_for(&sibling), WATCH_RATE_LIMIT);
+        assert!(!settings.watches_worker_idle(&sibling));
     }
 
     #[test]
-    fn old_settings_keep_the_rate_limit_watcher_and_the_default_continue_prompt() {
+    fn the_older_watcher_name_is_migrated_to_worker_idle() {
+        let mut settings = Settings {
+            watcher: "continue".into(),
+            ..Settings::default()
+        };
+        settings
+            .session_watcher
+            .insert("api:one".into(), "continue".into());
+        settings.migrate_watcher();
+        assert_eq!(settings.watcher, WATCH_WORKER_IDLE);
+        assert_eq!(settings.session_watcher["api:one"], WATCH_WORKER_IDLE);
+    }
+
+    #[test]
+    fn old_settings_keep_the_current_watcher_and_the_default_continue_prompt() {
         let mut value = serde_json::to_value(Settings::default()).unwrap();
         value.as_object_mut().unwrap().remove("watcher");
         value.as_object_mut().unwrap().remove("sessionWatcher");
         value.as_object_mut().unwrap().remove("continuePrompt");
         let settings: Settings = serde_json::from_value(value).unwrap();
-        assert_eq!(settings.watcher, WATCH_RATE_LIMIT);
+        assert_eq!(settings.watcher, WATCH_WORKER_IDLE);
         assert_eq!(settings.continue_prompt, DEFAULT_CONTINUE_PROMPT);
         assert!(settings.session_watcher.is_empty());
         let target = SessionTarget {
@@ -348,8 +394,8 @@ mod tests {
             source: "other".into(),
             ..Default::default()
         };
-        assert_eq!(settings.watcher_for(&target), WATCH_RATE_LIMIT);
-        assert!(!settings.watches_continue(&target));
+        assert_eq!(settings.watcher_for(&target), WATCH_WORKER_IDLE);
+        assert!(settings.watches_worker_idle(&target));
 
         // An old session record keeps working without the new fields.
         let old_target = serde_json::json!({

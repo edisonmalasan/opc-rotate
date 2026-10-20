@@ -37,7 +37,7 @@ import { changeMonitoring, isMonitored, terminalKey } from "./monitoring";
 
 type View = "sessions" | "relays" | "activity";
 type SessionFilter = "all" | "limited" | "busy" | "idle";
-type PromptKind = "rate-limit" | "continue";
+type PromptKind = "rate-limit" | "worker-idle";
 type PromptEditor = {
   target: SessionTarget | null;
   instant: boolean;
@@ -101,18 +101,21 @@ function stateLabel(state: string, error?: string | null) {
       : state === "idle"
         ? "Idle"
         : state === "stopped"
-          ? "Turn ended"
+          ? "Worker Idle"
           : state === "completed"
             ? "Completed"
             : "Status unavailable";
 }
 
 const WATCH_RATE_LIMIT = "rate-limit";
-const WATCH_CONTINUE = "continue";
+const WATCH_WORKER_IDLE = "worker-idle";
+const WATCH_DEFAULT = "default";
 
 /** The watcher mode that applies to a session: its own, then the app default. */
 function watcherFor(snapshot: Snapshot, target: SessionTarget) {
-  return snapshot.sessionWatcher?.[target.id] ?? snapshot.watcher ?? WATCH_RATE_LIMIT;
+  const chosen = snapshot.sessionWatcher?.[target.id];
+  if (chosen && chosen !== WATCH_DEFAULT) return chosen;
+  return snapshot.watcher ?? WATCH_WORKER_IDLE;
 }
 
 function tabLabel(target: SessionTarget) {
@@ -219,7 +222,11 @@ function routeNodes(
   else if (stage === "uncertain")
     nodes = ["done", "done", "done", "done", "done", "break"];
   else if (stage === "failed")
-    nodes = ["done", "done", "break", "todo", "todo", "todo"];
+    // A route that failed failed at the relay; a continuation that failed
+    // failed at the delivery.
+    nodes = changesIp
+      ? ["done", "done", "break", "todo", "todo", "todo"]
+      : ["done", "done", "done", "done", "break", "todo"];
   else {
     const at = routeIndex[stage];
     if (at === undefined) return null;
@@ -469,8 +476,13 @@ function SessionInspector({
     );
   const monitored = isMonitored(snapshot, target);
   const progress = snapshot.recovery?.[target.id];
+  const globalWatcher = snapshot.watcher ?? WATCH_WORKER_IDLE;
+  // What this session chose for itself, which may be "follow the default".
+  const sessionOverride = snapshot.sessionWatcher?.[target.id] ?? WATCH_DEFAULT;
+  // What actually applies to it right now.
   const sessionWatcher = watcherFor(snapshot, target);
-  const continueMode = sessionWatcher === WATCH_CONTINUE;
+  const workerIdleMode = sessionWatcher === WATCH_WORKER_IDLE;
+  const continueMode = workerIdleMode;
   const effectivePrompt =
     target.promptOverride ??
     (continueMode ? snapshot.continuePrompt : snapshot.globalPrompt);
@@ -555,7 +567,7 @@ function SessionInspector({
               aria-label="What this session is watched for"
             >
               <button
-                className={sessionWatcher === WATCH_RATE_LIMIT ? "active" : ""}
+                className={sessionOverride === WATCH_RATE_LIMIT ? "active" : ""}
                 disabled={pending !== null}
                 onClick={() =>
                   run("set_session_watcher", {
@@ -567,41 +579,35 @@ function SessionInspector({
                 Rate limits
               </button>
               <button
-                className={sessionWatcher === WATCH_CONTINUE ? "active" : ""}
+                className={sessionOverride === WATCH_WORKER_IDLE ? "active" : ""}
                 disabled={pending !== null}
                 onClick={() =>
                   run("set_session_watcher", {
                     targetId: target.id,
-                    watcher: WATCH_CONTINUE,
+                    watcher: WATCH_WORKER_IDLE,
                   })
                 }
               >
-                Turn ended
-              </button>
-            </div>
-          </div>
-          <div className="watcher-setting">
-            <span>Default for all sessions</span>
-            <div
-              className="segmented-control"
-              role="group"
-              aria-label="What sessions are watched for by default"
-            >
-              <button
-                className={snapshot.watcher === WATCH_RATE_LIMIT ? "active" : ""}
-                disabled={pending !== null}
-                onClick={() => run("set_watcher", { watcher: WATCH_RATE_LIMIT })}
-              >
-                Rate limits
+                Worker Idle
               </button>
               <button
-                className={snapshot.watcher === WATCH_CONTINUE ? "active" : ""}
+                className={sessionOverride === WATCH_DEFAULT ? "active" : ""}
                 disabled={pending !== null}
-                onClick={() => run("set_watcher", { watcher: WATCH_CONTINUE })}
+                onClick={() =>
+                  run("set_session_watcher", {
+                    targetId: target.id,
+                    watcher: WATCH_DEFAULT,
+                  })
+                }
               >
-                Turn ended
+                Default
               </button>
             </div>
+            <span className="watcher-setting-note">
+              {sessionOverride === WATCH_DEFAULT
+                ? `Following the app-wide mode: ${globalWatcher === WATCH_WORKER_IDLE ? "Worker Idle" : "Rate limits"}`
+                : "Overridden for this session"}
+            </span>
           </div>
           <label className="monitor-setting">
             <span>Monitor this session</span>
@@ -680,12 +686,12 @@ function SessionInspector({
           <span className="detail-caption">
             {target.promptOverride
               ? "Custom for this session"
-              : `Using the default ${continueMode ? "turn-ended" : "rate-limit"} prompt `}
+              : `Using the default ${continueMode ? "worker-idle" : "rate-limit"} prompt `}
             {!target.promptOverride && (
               <button
                 className="text-button"
                 onClick={() =>
-                  onEditDefault(continueMode ? "continue" : "rate-limit")
+                  onEditDefault(continueMode ? "worker-idle" : "rate-limit")
                 }
               >
                 Edit default
@@ -712,14 +718,22 @@ function SessionInspector({
           ) : (
             <RotateCcw size={16} />
           )}
-          {inProgress ? "Recovery in progress" : stopped && monitored ? "Retry manually" : "Recover session"}
+          {inProgress
+            ? "Recovery in progress"
+            : workerIdleMode
+              ? "Continue session"
+              : stopped && monitored
+                ? "Retry manually"
+                : "Recover session"}
         </button>
         <p>
           {monitored
             ? !isTauri() ? "Recovery actions are available in the desktop app."
               : inProgress ? "This session is already queued for recovery."
                 : stopped ? "One manual attempt. The automatic limit stays at two IP changes."
-                  : "Verifies a new IP before sending a continuation."
+                  : workerIdleMode
+                    ? "Sends a prompt to this session. The public IP is not changed."
+                    : "Verifies a new IP before sending a continuation."
             : "Enable “Monitor this session” above to recover it."}
         </p>
       </div>
@@ -847,7 +861,7 @@ function PromptDialog({
   const [value, setValue] = useState(
     editor.target
       ? (editor.target.promptOverride ?? "")
-      : editor.kind === "continue"
+      : editor.kind === "worker-idle"
         ? continuePrompt
         : globalPrompt,
   );
@@ -914,7 +928,7 @@ function PromptDialog({
           targetId: editor.target.id,
           prompt: useDefault ? null : value.trim() || null,
         })
-      : editor.kind === "continue"
+      : editor.kind === "worker-idle"
         ? await run("set_continue_prompt", { prompt: value.trim() })
         : await run("set_global_prompt", { prompt: value.trim() });
     setSaving(false);
@@ -999,7 +1013,7 @@ function PromptDialog({
           onChange={(event) => setValue(event.target.value)}
           placeholder={
             editor.target
-              ? editor.kind === "continue"
+              ? editor.kind === "worker-idle"
                 ? continuePrompt
                 : globalPrompt
               : "Enter a continuation prompt"
@@ -1191,6 +1205,12 @@ function App() {
   const shownOtherGroups = groupProjects(
     shownSessions.filter((session) => session.source === "other"),
   );
+  const globalWatcher = snapshot.watcher ?? WATCH_WORKER_IDLE;
+  const rateLimitRelevant =
+    globalWatcher === WATCH_RATE_LIMIT ||
+    [...snapshot.orcaSessions, ...snapshot.otherSessions].some(
+      (session) => watcherFor(snapshot, session) === WATCH_RATE_LIMIT,
+    );
   const relays = useMemo(() => {
     const result = snapshot.servers.filter((server) =>
       `${countryName(server.country)} ${server.host} ${server.ip}`
@@ -1267,16 +1287,17 @@ function App() {
             ...current,
             watcher: args?.watcher as string,
             vpnNeeded:
-              args?.watcher === WATCH_CONTINUE ? false : current.vpnNeeded,
+              args?.watcher === WATCH_WORKER_IDLE ? false : current.vpnNeeded,
           };
-        if (command === "set_session_watcher")
-          return {
-            ...current,
-            sessionWatcher: {
-              ...current.sessionWatcher,
-              [args?.targetId as string]: args?.watcher as string,
-            },
-          };
+        if (command === "set_session_watcher") {
+          const next = { ...current.sessionWatcher };
+          if (args?.watcher === WATCH_DEFAULT) {
+            delete next[args?.targetId as string];
+          } else {
+            next[args?.targetId as string] = args?.watcher as string;
+          }
+          return { ...current, sessionWatcher: next };
+        }
         if (command === "set_prompt_override") {
           const update = (target: SessionTarget) =>
             target.id === args?.targetId
@@ -1579,6 +1600,25 @@ function App() {
               )}
             </label>
             <button
+              className={`watcher-control ${globalWatcher === WATCH_WORKER_IDLE ? "worker-idle" : "rate-limit"}`}
+              aria-label={`Recovery mode: ${globalWatcher === WATCH_WORKER_IDLE ? "Worker Idle" : "Rate limits"}. Switch to ${globalWatcher === WATCH_WORKER_IDLE ? "Rate limits" : "Worker Idle"}`}
+              title={`Recovery mode for all sessions. Switch to ${globalWatcher === WATCH_WORKER_IDLE ? "Rate limits" : "Worker Idle"}`}
+              disabled={!controlsAvailable || pending !== null}
+              onClick={() =>
+                run("set_watcher", {
+                  watcher:
+                    globalWatcher === WATCH_WORKER_IDLE
+                      ? WATCH_RATE_LIMIT
+                      : WATCH_WORKER_IDLE,
+                })
+              }
+            >
+              <span className="watcher-control-label">Recovery</span>
+              <span className="watcher-control-value">
+                {globalWatcher === WATCH_WORKER_IDLE ? "Worker Idle" : "Rate limits"}
+              </span>
+            </button>
+            <button
               className={`monitor-control ${snapshot.monitoring ? "enabled" : ""}`}
               role="switch"
               aria-label="Monitoring"
@@ -1661,7 +1701,9 @@ function App() {
                 {(
                   [
                     ["all", "All sessions"],
-                    ["limited", "Provider errors"],
+                    ...(rateLimitRelevant
+                      ? ([["limited", "Provider errors"]] as const)
+                      : []),
                     ["busy", "Working"],
                     ["idle", "Idle"],
                   ] as const

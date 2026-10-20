@@ -95,7 +95,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   otherSessionsNotice: null,
   history: [],
   globalPrompt: DEFAULT_PROMPT,
-  watcher: "rate-limit",
+  watcher: "worker-idle",
   sessionWatcher: {},
   continuePrompt: "Continue where you left off.",
   vpnNeeded: false,

@@ -212,15 +212,19 @@ impl Inner {
             watcher: self.settings.watcher.clone(),
             session_watcher: self.settings.session_watcher.clone(),
             continue_prompt: self.settings.continue_prompt.clone(),
-            // The route only matters while a relay is connected or a recovery
-            // still has to change the public IP.
+            // The route only matters while a relay is connected, a recovery
+            // still has to change the public IP, or some session still watches
+            // rate limits.
             vpn_needed: self.connected_server.is_some()
                 || self.recovery.values().any(|progress| progress.changes_ip)
-                || self.pending.iter().any(|id| {
-                    self.target(id)
-                        .map(|target| !self.settings.watches_continue(&target))
-                        .unwrap_or(false)
-                }),
+                || self.settings.rate_limit_watchers(
+                    &self
+                        .orca_sessions
+                        .iter()
+                        .chain(&self.other_sessions)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                ),
             preferred_server: self.settings.preferred_server.clone(),
             last_error: self.last_error.clone(),
         }
@@ -274,6 +278,7 @@ impl Controller {
             .and_then(|content| serde_json::from_str(&content).ok())
             .unwrap_or_default();
         persisted.settings.migrate_default_prompt();
+        persisted.settings.migrate_watcher();
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(12))
             .build()
@@ -524,7 +529,7 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
         if !inner.settings.monitors(&target) {
             continue;
         }
-        if inner.settings.watches_continue(&target) {
+        if inner.settings.watches_worker_idle(&target) {
             // This session is watched for a finished turn, not a provider
             // failure. It is continued with a prompt and never a new IP.
             if target.state != "stopped" {
@@ -1487,13 +1492,41 @@ async fn set_session_watcher(
     let watcher = normalize_watcher(&watcher)?;
     {
         let mut inner = state.inner.lock().await;
-        if inner.target(&target_id).is_none() {
-            return Err("Session was not found".into());
+        let target = match inner.target(&target_id) {
+            Some(target) => target,
+            None => return Err("Session was not found".into()),
+        };
+        if watcher == models::WATCH_DEFAULT {
+            inner.settings.session_watcher.remove(&target_id);
+        } else {
+            inner
+                .settings
+                .session_watcher
+                .insert(target_id.clone(), watcher.to_string());
         }
-        inner
-            .settings
-            .session_watcher
-            .insert(target_id, watcher.to_string());
+        // A session that no longer watches rate limits must not keep a queued
+        // route change, and one that no longer watches finished turns must not
+        // keep a queued continuation.
+        let now_worker_idle = inner.settings.watches_worker_idle(&target);
+        if now_worker_idle && inner.pending.remove(&target_id) {
+            inner.ready_to_resume.remove(&target_id);
+            inner.progress_ip(
+                &target_id,
+                "paused",
+                "This session now watches finished turns, so the queued route change was canceled",
+                None,
+                false,
+            );
+        }
+        if !now_worker_idle && inner.continue_pending.remove(&target_id) {
+            inner.progress_ip(
+                &target_id,
+                "paused",
+                "This session now watches rate limits, so the queued continuation was canceled",
+                None,
+                true,
+            );
+        }
     }
     state.save().await;
     state.emit(&app).await;
@@ -1519,7 +1552,8 @@ async fn set_continue_prompt(
 fn normalize_watcher(watcher: &str) -> Result<&'static str, String> {
     match watcher {
         models::WATCH_RATE_LIMIT => Ok(models::WATCH_RATE_LIMIT),
-        models::WATCH_CONTINUE => Ok(models::WATCH_CONTINUE),
+        models::WATCH_WORKER_IDLE => Ok(models::WATCH_WORKER_IDLE),
+        models::WATCH_DEFAULT => Ok(models::WATCH_DEFAULT),
         _ => Err("Unknown watcher mode".into()),
     }
 }
@@ -1625,16 +1659,31 @@ async fn recover_now(
                     .into(),
             );
         }
-        inner.pending.insert(target_id.clone());
-        // A manual recovery is the full route change, so it supersedes an
-        // automatic continuation that may already be queued for this session.
-        inner.continue_pending.remove(&target_id);
-        inner.progress(
-            &target_id,
-            "queued",
-            "Manual recovery queued; waits for busy work before changing the VPN",
-            None,
-        );
+        if inner.settings.watches_worker_idle(&target) {
+            // A worker that has gone idle is continued with a prompt; the
+            // public IP is not touched.
+            inner.continue_pending.insert(target_id.clone());
+            inner.pending.remove(&target_id);
+            inner.ready_to_resume.remove(&target_id);
+            inner.progress_ip(
+                &target_id,
+                "queued",
+                "Manual continuation queued; the public IP is not changed",
+                None,
+                false,
+            );
+        } else {
+            inner.pending.insert(target_id.clone());
+            // A manual recovery is the full route change, so it supersedes an
+            // automatic continuation that may already be queued for this session.
+            inner.continue_pending.remove(&target_id);
+            inner.progress(
+                &target_id,
+                "queued",
+                "Manual recovery queued; waits for busy work before changing the VPN",
+                None,
+            );
+        }
     }
     start_recovery_if_needed(app, state.inner().clone()).await;
     Ok(state.snapshot().await)
@@ -1730,6 +1779,8 @@ mod tests {
             recovery: HashMap::new(),
             settings: Settings {
                 monitoring: true,
+                // Most controller tests exercise the rate-limit path.
+                watcher: models::WATCH_RATE_LIMIT.into(),
                 ..Settings::default()
             },
             servers: Vec::new(),
@@ -1953,13 +2004,87 @@ mod tests {
     #[test]
     fn a_stopped_session_in_continue_mode_is_queued_without_changing_the_public_ip() {
         let mut state = inner();
-        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.settings.watcher = models::WATCH_WORKER_IDLE.into();
         state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
         assert_eq!(queue_incidents(&mut state).len(), 1);
         assert!(state.continue_pending.contains("api:one"));
         assert!(state.pending.is_empty());
         assert_eq!(state.recovery["api:one"].stage, "queued");
         assert!(!state.recovery["api:one"].changes_ip);
+    }
+
+    #[test]
+    fn a_session_set_to_follow_the_default_uses_the_app_wide_mode() {
+        let mut state = inner();
+        state.settings.watcher = models::WATCH_WORKER_IDLE.into();
+        state
+            .settings
+            .session_watcher
+            .insert("api:one".into(), models::WATCH_DEFAULT.into());
+        state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
+        // The session has no choice of its own, so the app-wide mode decides.
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(state.continue_pending.contains("api:one"));
+        assert!(state.pending.is_empty());
+    }
+
+    #[test]
+    fn an_explicit_session_mode_survives_the_app_wide_mode_changing() {
+        let mut state = inner();
+        state.settings.watcher = models::WATCH_WORKER_IDLE.into();
+        state
+            .settings
+            .session_watcher
+            .insert("api:one".into(), models::WATCH_RATE_LIMIT.into());
+        state.orca_sessions = vec![target("api:one", "orca", "rate-limited", Some("failure"))];
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        // The session still watches rate limits, so it needs the route.
+        assert!(state.pending.contains("api:one"));
+        assert!(state.continue_pending.is_empty());
+    }
+
+    #[test]
+    fn the_route_is_not_needed_while_nothing_watches_rate_limits() {
+        let mut state = inner();
+        state.settings.watcher = models::WATCH_WORKER_IDLE.into();
+        state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
+        queue_incidents(&mut state);
+        assert!(!state.snapshot().vpn_needed);
+
+        // One session that still watches rate limits brings the route back.
+        state
+            .settings
+            .session_watcher
+            .insert("api:one".into(), models::WATCH_RATE_LIMIT.into());
+        assert!(state.snapshot().vpn_needed);
+    }
+
+    #[test]
+    fn a_session_that_stops_watching_rate_limits_drops_its_queued_route_change() {
+        let mut state = inner();
+        state.orca_sessions = vec![target("api:one", "orca", "rate-limited", Some("failure"))];
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(state.pending.contains("api:one"));
+
+        // Switching the session to finished turns cancels the queued rotation.
+        state
+            .settings
+            .session_watcher
+            .insert("api:one".into(), models::WATCH_WORKER_IDLE.into());
+        let target = state.target("api:one").unwrap();
+        let now_worker_idle = state.settings.watches_worker_idle(&target);
+        assert!(now_worker_idle);
+        state.pending.remove("api:one");
+        state.ready_to_resume.remove("api:one");
+        state.progress_ip(
+            "api:one",
+            "paused",
+            "This session now watches finished turns, so the queued route change was canceled",
+            None,
+            false,
+        );
+        assert!(state.pending.is_empty());
+        assert_eq!(state.recovery["api:one"].stage, "paused");
     }
 
     #[test]
@@ -1976,7 +2101,7 @@ mod tests {
     #[test]
     fn continue_mode_ignores_a_rate_limited_session() {
         let mut state = inner();
-        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.settings.watcher = models::WATCH_WORKER_IDLE.into();
         state.orca_sessions = vec![target("api:one", "orca", "rate-limited", Some("failure"))];
         assert!(queue_incidents(&mut state).is_empty());
         assert!(state.pending.is_empty());
@@ -1987,7 +2112,7 @@ mod tests {
     #[test]
     fn a_stop_key_is_continued_only_once() {
         let mut state = inner();
-        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.settings.watcher = models::WATCH_WORKER_IDLE.into();
         state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
         assert_eq!(queue_incidents(&mut state).len(), 1);
         assert!(state.continue_pending.contains("api:one"));
@@ -2005,7 +2130,7 @@ mod tests {
     #[test]
     fn the_vpn_route_is_needed_only_when_something_changes_the_public_ip() {
         let mut state = inner();
-        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.settings.watcher = models::WATCH_WORKER_IDLE.into();
         state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
         assert!(!state.snapshot().vpn_needed);
         queue_incidents(&mut state);
