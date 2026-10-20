@@ -36,7 +36,7 @@ Installers will be listed under [GitHub Releases](https://github.com/edisonmalas
 
 **Worker Idle** watches for a session whose turn finished cleanly and sends it a continuation prompt. It never touches the network, and the VPN parts of the interface are hidden while it is the mode in use. A session that still has subagents working is never treated as idle.
 
-The two modes use different default continuations, and you can edit either of them globally or per session. Recovery preserves your terminals and the selected OpenCode tab.
+Both modes send the same default continuation, **"Continue"**, which you can edit globally or per session. Recovery preserves your terminals and the selected OpenCode tab.
 
 See [setup, usage, and troubleshooting](docs/USAGE.md) for requirements, delivery safeguards, local data, and uninstall steps.
 

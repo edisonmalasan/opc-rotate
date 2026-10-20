@@ -40,11 +40,11 @@ The two modes are exclusive per session. A session watched for finished turns th
 
 Changing one session's mode cancels the other kind of work queued for it. A session switched to **Worker Idle** no longer keeps a queued route change, and one switched to **Rate limits** no longer keeps a queued continuation.
 
-The **Worker Idle** mode has its own default continuation prompt, stored separately from the rate-limit prompt:
+Both modes send the same default continuation prompt:
 
-> Continue where you left off.
+> Continue
 
-A session's own prompt override wins over either default. The sidebar's **Continuation prompt** edits the rate-limit default; the session inspector's **Continuation prompt** editor overrides it for that session only.
+Edit it with **Continuation prompt** in the sidebar, or set a session override in the inspector. A session's own prompt override wins over the default. The editor on screen always shows the prompt that will actually be sent, so there is no separate prompt per mode to keep track of.
 
 **Subagents.** The live OpenCode plugin reports how many child sessions of a session are still executing. The session row shows the count, for example **2 subagents working**. A session with a live subagent is not treated as finished, so its parent is not continued while a child session is still working.
 
@@ -82,11 +82,11 @@ The **Worker Idle** mode runs only the delivery step: it sends the continuation 
 
 Request claims, SDK receipts, and a persisted incident guard prevent automatic duplicate submissions. An ambiguous submission is not retried automatically; inspect the session before taking another action. The app touches only profiles named with its `OPCRotate_` prefix and refuses to replace an unrelated connected SoftEther profile.
 
-The default continuation prompt for a rate-limit recovery is:
+The default continuation prompt is:
 
-> Continue from where you stopped after the rate limit
+> Continue
 
-Edit it with **Continuation prompt** in the sidebar, or set a session override in its inspector. Custom prompts survive updates. The **Worker Idle** mode has its own default, "Continue where you left off."; edit it with **Edit default** under the prompt in the inspector, where the default for the session's current mode is shown. A session override wins over either default.
+Edit it with **Continuation prompt** in the sidebar, or set a session override in its inspector. Custom prompts survive updates.
 
 ### Retry timing and per-session progress
 

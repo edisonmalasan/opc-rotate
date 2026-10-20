@@ -461,8 +461,12 @@ Borders are directional where they appear at all: a dark top edge and a faint li
 - **Rule:** a dot never carries meaning alone. It always sits beside the word **Idle**, **Working**, **Worker Idle**, **Rate limited**, **Provider blocked**, or **Status unavailable**.
 
 ### Watcher Choice
-- **Shape:** two controls. The app-wide one is a single button in the toolbar, immediately beside the Monitoring switch, reading **Recovery** followed by the current mode. The per-session one is a three-option segmented control in the inspector: **Rate limits**, **Worker Idle**, **Default**, with a note that says whether the session is following the app-wide mode or has its own.
+- **Shape:** two controls. The app-wide one is a single button in the toolbar, immediately beside the Monitoring switch, reading **Recovery** followed by the current mode. The per-session one is a three-option segmented control in the inspector: **Rate limits**, **Worker Idle**, **Default**, with a note that says whether the session is following the app-wide mode or has its own. The label, the control and the note each sit on their own line, so nothing in the row can stretch and a mode button never grows a tall block.
 - **Rule:** the two modes are **Rate limits** and **Worker Idle**, and the choice is never a colour. A watcher that does not touch the network is also the one that removes the VPN route from the screen, and the interface says so by having nothing to show.
+
+### Continuation Prompt
+- **Shape:** one prompt, not one per mode. The inspector shows the prompt that will actually be sent, with a plain line beneath it: **Used by every session** beside **Edit the default**, or **This session's own prompt** beside **Use the default**.
+- **Rule:** the editor on screen is never about a different prompt than the one being sent. There is no mode wording in the prompt's own interface, because the mode decides when the prompt goes out, not what it says.
 
 ### Activity Rows
 - **Style:** `76px` minimum-height rows separated by hairlines, with a `24px` severity marker on the left, the level above the prose, and a monospaced timestamp on the right.
