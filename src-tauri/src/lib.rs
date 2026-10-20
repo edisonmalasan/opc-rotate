@@ -20,7 +20,7 @@ const BUSY_DEFERRED: &str = "Other OpenCode sessions are still active; recovery 
 const MAX_IP_CHANGES: u8 = 2;
 const ORCA_RETRY_GAP_MS: u64 = 30_000;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 struct Persisted {
     settings: Settings,
     history: Vec<HistoryEntry>,
@@ -267,6 +267,18 @@ struct Controller {
     settings_path: PathBuf,
 }
 
+fn write_settings_file(path: &std::path::Path, data: &Persisted) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_vec_pretty(data) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
+    }
+}
+
 impl Controller {
     fn new() -> Self {
         let settings_path = dirs::config_dir()
@@ -277,8 +289,17 @@ impl Controller {
             .ok()
             .and_then(|content| serde_json::from_str(&content).ok())
             .unwrap_or_default();
+        let persisted_before = persisted.clone();
         persisted.settings.migrate_default_prompt();
         persisted.settings.migrate_watcher();
+        // The prompt migration replaces a saved prompt, so it has to be
+        // written out now. Otherwise it would run again on every start and
+        // discard whatever the operator wrote afterwards.
+        if serde_json::to_string(&persisted.settings).ok()
+            != serde_json::to_string(&persisted_before.settings).ok()
+        {
+            write_settings_file(&settings_path, &persisted);
+        }
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(12))
             .build()
@@ -328,15 +349,7 @@ impl Controller {
 
     async fn save(&self) {
         let data = self.inner.lock().await.persisted();
-        if let Some(parent) = self.settings_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_vec_pretty(&data) {
-            let tmp = self.settings_path.with_extension("json.tmp");
-            if std::fs::write(&tmp, json).is_ok() {
-                let _ = std::fs::rename(&tmp, &self.settings_path);
-            }
-        }
+        write_settings_file(&self.settings_path, &data);
     }
 
     async fn record(&self, app: &AppHandle, level: &str, message: impl Into<String>) {
