@@ -44,20 +44,24 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - Leases refresh every two seconds and expire after eight seconds. A closed tab disappears but an already observed incident stays visible, labeled **Closed tab**, with no delivery route until it is reopened.
 - Sessions are deduplicated by exact session ID, never by project directory. Orca and outside clients are listed as separate sources.
 - The shared service is a fallback for responding sessions, not for idle presence. Unknown execution status is never rendered as Idle.
-- A session that finished its turn is reported as **Turn ended**, together with the number of child sessions still executing. Both come from the live CLI plugin alone: only that client can see a session's child sessions and can tell the operator's own message apart from one the app delivered. The shared-service fallback keeps its previous behavior and reports only rate limits, busy, and idle — never a finished turn.
+- A session that finished its turn is reported as **Worker Idle**, together with the number of child sessions still executing. Both come from the live CLI plugin alone: only that client can see a session's child sessions and can tell the operator's own message apart from one the app delivered. The shared-service fallback keeps its previous behavior and reports only rate limits, busy, and idle — never a finished turn.
 - The plugin remembers the prompts it delivered itself, so a stop is continued once, and only again after the operator sends new input.
 
 **Monitoring selection**
 - Rules exist per session and per terminal. A session override wins over its terminal rule; a new tab inherits its terminal rule.
 - Choices are persisted. Unchecked sessions stay visible as **Not monitored** and cannot queue or receive recovery. Unchecking prunes queued work; pausing the master switch clears pending continuations.
 - Busy-work protection covers every live session, monitored or not, because VPN routing is machine-wide. Unknown execution status also blocks a change.
-- Every session follows one of two watcher modes: **Rate limits**, the default, or **Turn ended**. A session's own choice wins over the app-wide default, and both are persisted.
+- Every session follows one of two watcher modes: **Rate limits** or **Worker Idle**. The app-wide default is **Worker Idle**, so a fresh install watches finished turns rather than rate limits.
+- The app-wide mode is set by the **Recovery** control in the top bar, immediately to the left of the **Monitoring** switch. It reads **Recovery** followed by the current mode — **Recovery  Worker Idle** or **Recovery  Rate limits** — and clicking it switches to the other mode. It is the only app-wide control for the mode.
+- A session can override the app-wide mode from the session inspector's **Monitoring** section, where **Watch this session for** offers **Rate limits**, **Worker Idle**, and **Default**. **Default** means the session follows the app-wide mode; the line under it then reads **Following the app-wide mode: Worker Idle** or **Following the app-wide mode: Rate limits**, and reads **Overridden for this session** once the session has a choice of its own. A session's own choice wins over the app-wide default, and every choice is persisted.
+- In **Worker Idle** mode the rate-limit parts of the interface are hidden. The **Provider errors** filter is not offered, because no session is being watched for a provider failure, and the inspector's primary action reads **Continue session** instead of **Recover session**, with the helper line **Sends a prompt to this session. The public IP is not changed.**
 
 **Recovery**
 - Triggers: failed, idle provider events containing a rate-limit or quota error, and the specific message "OpenCode's free tier can only be used from within OpenCode." The client-gate match tolerates wrapped whitespace and curly apostrophes and ignores HTTP status. Ordinary permission errors and assistant prose are excluded.
-- In the **Turn ended** mode the trigger is a cleanly finished turn instead of a provider failure. A turn-ended recovery sends the continuation prompt only: it connects no relay, changes no public IP, and consumes none of the two verified IP changes.
-- The two modes are exclusive per session. A rate-limited session watched for finished turns is still displayed as rate limited, but it is not recovered automatically, because a prompt cannot clear a rate limit. A manual recovery started from the session inspector is unchanged.
-- The turn-ended mode carries its own default continuation prompt, "Continue where you left off.", separate from the rate-limit prompt. A per-session prompt override wins over either default.
+- In the **Worker Idle** mode the trigger is a cleanly finished turn instead of a provider failure. A **Worker Idle** recovery sends the continuation prompt only: it connects no relay, changes no public IP, and consumes none of the two verified IP changes.
+- The two modes are exclusive per session. A rate-limited session watched for finished turns is still displayed as rate limited, but it is not recovered automatically, because a prompt cannot clear a rate limit.
+- Changing a session's watcher mode cancels the other kind of work queued for it: a session switched to **Worker Idle** no longer keeps a queued route change, and one switched to **Rate limits** no longer keeps a queued continuation. A manual recovery follows the session's mode, so **Continue session** queues a prompt-only continuation and **Recover session** queues a route change.
+- The **Worker Idle** mode carries its own default continuation prompt, "Continue where you left off.", separate from the rate-limit prompt. A per-session prompt override wins over either default.
 - Sequence: wait for other detected work to go idle, rank eligible relays by low ping and high advertised speed, try at most five relays with up to twenty seconds per connection, require both a connected SoftEther account and a changed public IPv4 address checked through ipify, then deliver the continuation to the exact affected session while preserving the selected tab.
 - A session stops after two verified IP changes. There is no timed reset, and the count survives restarts. A manual action queues another attempt that still waits for busy work and still verifies a changed IP.
 - Requests are claimed once, receipts come back from the client, and the incident guard is persisted before transport. An ambiguous submission is shown for inspection and never retried automatically. Unknown execution status blocks VPN changes.
@@ -66,16 +70,18 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 **Relays and history**
 - The relay list refreshes every five minutes and on demand, and can be sorted by recommendation, ping, or line speed. A preferred relay becomes the next first candidate.
 - Activity records connection changes, prompt receipts, and failures, and is the place to look when a recovery stops or a delivery is uncertain.
-- The route bar — connection state, public IP, disconnect, and the relay list link — is shown only while something on screen depends on the VPN route: a relay is connected, a recovery is changing the public IP, or a session waits on a rate-limit recovery. With no connected relay and only turn-ended watching, it disappears, and the relay list stays reachable from the sidebar.
+- The route bar — connection state, public IP, disconnect, and the relay list link — is shown only while something on screen depends on the VPN route: a relay is connected, a recovery is changing the public IP, or a session waits on a rate-limit recovery. With no connected relay and only **Worker Idle** watching, it disappears, and the relay list stays reachable from the sidebar.
 
 **Terminology** (fixed product language)
-- Activity: **Idle**, **Working**, **Rate limited**, **Provider blocked**, **Turn ended**, **Status unavailable**, **Selected tab**, **Background tab**.
+- Activity: **Idle**, **Working**, **Rate limited**, **Provider blocked**, **Worker Idle**, **Status unavailable**, **Selected tab**, **Background tab**.
 - Recovery: **queued**, **waiting for work**, **connecting**, **verifying IP**, **waiting for idle**, **sending a prompt**, **prompt sent**, **stopped/uncertain**, **Not monitored**, **Stopped · 2-IP limit**, **Eligible in …s**, **Awaiting next check**.
 - A session can stay **Rate limited** while its recovery is **Stopped**: the provider failure and the app's recovery process are separate states.
 - **Prompt sent** confirms a receipt, not that the provider accepted the next model call.
-- **Turn ended** means the session finished its turn and is waiting for the operator. A session with a live child session is still working, not turned ended.
+- **Worker Idle** means the session finished its turn and is waiting for the operator. A session with a live child session is still working, not worker idle.
 - **2 subagents working** counts the child sessions of that session that are still executing.
-- A turn-ended recovery changes no IP, so its route line leaves out the relay and IP-verification stations.
+- The two watcher modes are **Rate limits** and **Worker Idle**. **Default** in a session's watcher control means the session follows the app-wide mode.
+- A **Worker Idle** recovery changes no IP, so its route line draws the relay and IP-verification stations as short dashes and breaks the line across them, so the route that was not taken is visible.
+- The route line has six stations: **Queued**, **Idle wait**, **New route**, **Verify IP**, **Deliver**, **Receipt**. A failure breaks the line where it happened: a failed route change breaks at **New route**, a failed continuation breaks at **Deliver**.
 
 **Platform and environment**
 - Windows x64 desktop app (Tauri 2), with a React 19 + TypeScript + Vite 6 interface and a Rust 2021 controller. The interface is a web UI rendered in a native window.
@@ -105,15 +111,15 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - `docs/images/dashboard.jpg` — labeled development preview of the workspace with sample data and no live connection.
 - `src/dev-preview.ts` — development-only fixture data, reached through `?preview=1` in the browser; excluded from release assets by `scripts/check-release.mjs`.
 - `release-artifacts/v0.1.0/` — built NSIS installer and matching `SHA256SUMS.txt` (gitignored, not published).
-- Automated coverage: 11 Node presence-plugin tests plus Rust unit and mock HTTP tests alongside the source, run by `npm test`.
-- Verified in the browser preview: both watcher modes and their inspector controls, the **Turn ended** activity state, the subagent count, the turn-ended prompt default, and the route bar's absence while nothing depends on the VPN route.
+- Automated coverage: 11 Node presence-plugin tests and 47 Rust unit and mock HTTP tests alongside the source, run by `npm test`.
+- Verified in the browser preview: both watcher modes, the top-bar **Recovery** control, the inspector's three-option watcher control with its **Default** state, the **Worker Idle** activity state, the subagent count, the **Worker Idle** prompt default, the route bar's absence while nothing depends on the VPN route, and the route line's skipped stations.
 - Verified live, in the running native app: discovery of idle and background tabs in Orca and outside clients, project grouping in the rail, and detection of the free-tier client-gate provider error with monitoring paused.
 - Verified live earlier, using the former terminal-send transport: a recovery that skipped a failed relay candidate.
 
 **Absences — future work must not fabricate**
 - No public GitHub release has been published; version 0.1.0 is a preview candidate.
 - Live continuation through the current exact-session transport is unverified for Orca, outside clients, and background tabs. Live VPN verification is still pending.
-- The turn-ended watcher mode has not been exercised against a live OpenCode client. Its code, tests, and browser preview are verified; the live behavior is not.
+- The **Worker Idle** watcher mode has not been exercised against a live OpenCode client. Its code, tests, and browser preview are verified; the live behavior is not.
 - Clean-machine install, upgrade, and uninstall smoke tests have not been run.
 - The installer is unsigned and has no automatic updater.
 - There are no customers, testimonials, case studies, benchmarks, pricing, or licensing claims beyond the MIT license.

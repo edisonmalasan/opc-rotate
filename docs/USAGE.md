@@ -19,26 +19,28 @@ SoftEther is a **separate installed dependency** in this preview. Its service an
 4. Choose which work to recover. All sessions are included initially; use the row checkboxes or **Monitor this terminal** in the inspector. A terminal rule includes new tabs; individual session choices override it. Choices are saved.
 5. Turn on **Monitoring** when ready. It starts off on a fresh install and restores your saved preference on subsequent launches.
 
-**Idle** means the session is live but not responding. **Working** means it is responding. **Rate limited** or **Provider blocked** describes the latest qualifying provider failure. **Turn ended** means the session finished its turn and is waiting for you. This appears beneath the session title; the separate **Recovery** column shows what Recovery is doing. **Status unavailable** means execution status could not be established. **Selected tab** describes the tab shown in its terminal, independently of whether it is working. The **Provider errors** filter includes affected sessions even if recovery is stopped or they are not monitored.
+**Idle** means the session is live but not responding. **Working** means it is responding. **Rate limited** or **Provider blocked** describes the latest qualifying provider failure. **Worker Idle** means the session finished its turn and is waiting for you. This appears beneath the session title; the separate **Recovery** column shows what Recovery is doing. **Status unavailable** means execution status could not be established. **Selected tab** describes the tab shown in its terminal, independently of whether it is working. The **Provider errors** filter includes affected sessions even if recovery is stopped or they are not monitored.
 
-Unchecked sessions stay visible as **Not monitored**. They cannot trigger recovery or receive its prompts. Unchecking removes queued work; a prompt already submitted cannot be recalled. Pausing Monitoring clears pending continuations without changing your selections. **Recover session** is a manual action for included sessions and works while automatic monitoring is paused.
+Unchecked sessions stay visible as **Not monitored**. They cannot trigger recovery or receive its prompts. Unchecking removes queued work; a prompt already submitted cannot be recalled. Pausing Monitoring clears pending continuations without changing your selections. **Recover session** and **Continue session** are manual actions for included sessions and work while automatic monitoring is paused.
 
 ## Watcher modes
 
-Every session is watched for one of two things. The mode is chosen in the session inspector's **Monitoring** section:
+Every session is watched for one of two things, and the mode is chosen in two places.
 
-- **Watch this session for** sets the mode of the selected session. It overrides the app-wide default for that session only.
-- **Default for all sessions** sets the mode every session follows unless it overrides it. It starts on **Rate limits**.
+- The **Recovery** control in the top bar, immediately to the left of the **Monitoring** switch, sets the mode that every session follows unless it overrides it. It reads **Recovery** followed by the current mode, so it shows **Recovery  Worker Idle** or **Recovery  Rate limits**, and clicking it switches to the other mode. It is the only app-wide control for the mode.
+- **Watch this session for** in the session inspector's **Monitoring** section sets the mode of the selected session. It has three options: **Rate limits**, **Worker Idle**, and **Default**. **Default** means the session follows the app-wide mode. The line under it reads **Following the app-wide mode: Worker Idle** or **Following the app-wide mode: Rate limits** while the session is on **Default**, and reads **Overridden for this session** once the session has a choice of its own.
 
-Both choices are saved. Changing the default for all sessions cancels recoveries that are already queued.
+All choices are saved. The app-wide mode starts on **Worker Idle**, so a fresh install watches finished turns rather than rate limits. Changing the app-wide mode changes every session that is on **Default**; a session with its own choice keeps it. Changing the app-wide mode also clears the work queued for every session.
 
 **Rate limits** is the provider-failure watcher. When a session hits a rate-limit or quota failure, or the free-tier client gate, Recovery waits for the machine to go quiet, changes the public IP through a VPN relay, verifies the new address, and only then sends the continuation prompt. The limit of two verified IP changes per session applies to this mode.
 
-**Turn ended** watches for a session that finished its turn and is waiting for you. Recovery sends the continuation prompt to that session and does nothing else: it connects no relay, changes no public IP, and uses none of the two IP changes.
+**Worker Idle** watches for a session that finished its turn and is waiting for you. Recovery sends the continuation prompt to that session and does nothing else: it connects no relay, changes no public IP, and uses none of the two IP changes. The session's activity is shown as **Worker Idle**.
 
-The two modes are exclusive per session. A session watched for finished turns that hits a rate limit is still shown as **Rate limited**, but it is not recovered automatically, because a prompt cannot clear a rate limit. **Recover session** in the inspector still starts the full manual recovery, and that path is unchanged.
+The two modes are exclusive per session. A session watched for finished turns that hits a rate limit is still shown as **Rate limited**, but it is not recovered automatically, because a prompt cannot clear a rate limit. A manual recovery follows the session's mode: **Continue session** queues a prompt-only continuation, and **Recover session** queues a route change.
 
-The turn-ended mode has its own default continuation prompt, stored separately from the rate-limit prompt:
+Changing one session's mode cancels the other kind of work queued for it. A session switched to **Worker Idle** no longer keeps a queued route change, and one switched to **Rate limits** no longer keeps a queued continuation.
+
+The **Worker Idle** mode has its own default continuation prompt, stored separately from the rate-limit prompt:
 
 > Continue where you left off.
 
@@ -46,9 +48,21 @@ A session's own prompt override wins over either default. The sidebar's **Contin
 
 **Subagents.** The live OpenCode plugin reports how many child sessions of a session are still executing. The session row shows the count, for example **2 subagents working**. A session with a live subagent is not treated as finished, so its parent is not continued while a child session is still working.
 
-**Turn ended** and the subagent count come from the live OpenCode CLI plugin only, because only that client can see a session's child sessions and can tell your own message apart from one Recovery delivered. The shared-service fallback, used when no live client is present, reports rate limits, busy, and idle; it never reports a finished turn, and a session it reports is never continued automatically.
+**Worker Idle** and the subagent count come from the live OpenCode CLI plugin only, because only that client can see a session's child sessions and can tell your own message apart from one Recovery delivered. The shared-service fallback, used when no live client is present, reports rate limits, busy, and idle; it never reports a finished turn, and a session it reports is never continued automatically.
 
-**The route bar** — the connection state, public IP, **Disconnect**, and **View relays** — appears only while something on screen depends on the VPN route: a relay is connected, a recovery is changing the public IP, or a session is waiting on a rate-limit recovery. In **Turn ended** mode with no connected relay the bar disappears entirely; the relay list stays reachable from the sidebar.
+### What Worker Idle hides
+
+When no session on screen is watched for rate limits, the rate-limit parts of the interface are hidden, so the window does not imply that a network change is involved.
+
+- **The route bar** — the connection state, public IP, **Disconnect**, and **View relays** — is hidden. It reappears when a relay is connected, when a recovery has to change the public IP, or when any session still watches rate limits. The relay list stays reachable from the sidebar.
+- The **Provider errors** filter is not offered, because no session is being watched for a provider failure.
+- The inspector's primary action reads **Continue session** instead of **Recover session**, and its helper line reads **Sends a prompt to this session. The public IP is not changed.** instead of **Verifies a new IP before sending a continuation.**
+
+### The route line
+
+A recovering session shows a route line of six stations: **Queued**, **Idle wait**, **New route**, **Verify IP**, **Deliver**, **Receipt**. In **Rate limits** mode the whole route is traversed. In **Worker Idle** mode the two relay stations, **New route** and **Verify IP**, are drawn as short dashes and the line is broken across them, so the route that was not taken is visible. A failure breaks the line where it happened: a failed route change breaks at **New route**, a failed continuation breaks at **Deliver**. The live station breathes while a recovery is moving; reduced motion stops the pulse.
+
+**Preview.** The browser preview (`npm run dev`, then `?preview=1`) opens on the shipped default: **Worker Idle**, no route bar, a continuation in flight and one queued. Add `&rate=1` for **Rate limits** with the route bar and the **Provider errors** filter visible, `&recovery=1` for the rate-limit route diagram in its four states — connecting, waiting, receipt confirmed, and stopped — `&empty=1` for empty states, and `&view=relays` or `&view=activity` for the other two views. Preview data is in-memory and never reaches a live client.
 
 ## Recovery sequence
 
@@ -64,7 +78,7 @@ The latter match accepts wrapped whitespace and curly apostrophes, regardless of
 4. Send the continuation to the exact affected session ID through its live CLI plugin, preserving the currently selected tab. Busy targets wait on the verified connection instead of causing another rotation.
 5. Stop if the error persists after **two verified IP changes** for that session. Record the result in **Activity**.
 
-The **Turn ended** mode runs only the delivery step: it sends the continuation prompt to the exact session and leaves the relay, the public IP, and the IP-change count alone.
+The **Worker Idle** mode runs only the delivery step: it sends the continuation prompt to the exact session and leaves the relay, the public IP, and the IP-change count alone.
 
 Request claims, SDK receipts, and a persisted incident guard prevent automatic duplicate submissions. An ambiguous submission is not retried automatically; inspect the session before taking another action. The app touches only profiles named with its `OPCRotate_` prefix and refuses to replace an unrelated connected SoftEther profile.
 
@@ -72,7 +86,7 @@ The default continuation prompt for a rate-limit recovery is:
 
 > Continue from where you stopped after the rate limit
 
-Edit it with **Continuation prompt** in the sidebar, or set a session override in its inspector. Custom prompts survive updates. The **Turn ended** mode has its own default, "Continue where you left off."; edit it with **Edit default** under the prompt in the inspector, where the default for the session's current mode is shown. A session override wins over either default.
+Edit it with **Continuation prompt** in the sidebar, or set a session override in its inspector. Custom prompts survive updates. The **Worker Idle** mode has its own default, "Continue where you left off."; edit it with **Edit default** under the prompt in the inspector, where the default for the session's current mode is shown. A session override wins over either default.
 
 ### Retry timing and per-session progress
 
@@ -103,7 +117,7 @@ The automatic limit is two verified IP changes per session. There is no timed re
 | Recovery waits despite excluded sessions | Working sessions still protect the machine's network connection. Wait for them to become idle. |
 | IP changed but the provider still rejects work | Review Activity and the original provider error. IPv4 verification does not verify IPv6 egress; changing IP does not guarantee the provider will accept the request. |
 | Prompt delivery is uncertain | Inspect the affected OpenCode session. The app avoids an automatic retry that could duplicate work. |
-| A finished turn is never continued | Turn-ended detection needs the live OpenCode CLI plugin. The shared-service fallback reports rate limits, busy, and idle only, and never continues a session automatically. |
+| A finished turn is never continued | Worker Idle detection needs the live OpenCode CLI plugin. The shared-service fallback reports rate limits, busy, and idle only, and never continues a session automatically. |
 
 Leases refresh every two seconds and expire after eight seconds. Closed tabs disappear; already observed recovery incidents can remain labeled **Closed tab**, with no delivery route until reopened. Connected private-service clients work through their live plugin; arbitrary private endpoints without a live client are not discovered.
 
@@ -123,8 +137,8 @@ To remove Recovery, first disconnect its VPN through the dashboard, quit Recover
 ## Preview limitations
 
 - The new exact-session continuation transport has automated coverage but still needs a live recovery check for Orca, outside clients, and background tabs. Earlier live recovery used the previous terminal-send transport.
-- The **Turn ended** watcher has automated coverage and a browser preview check, but no live check against a real OpenCode client yet.
-- The shared-service fallback never reports a finished turn and never continues a session automatically. Turn-ended recovery only happens for sessions reported by a live CLI client.
+- The **Worker Idle** watcher has automated coverage and a browser preview check, but no live check against a real OpenCode client yet.
+- The shared-service fallback never reports a finished turn and never continues a session automatically. Worker Idle recovery only happens for sessions reported by a live CLI client.
 - A clean-PC installation and upgrade/uninstall smoke test remain pending.
 - The installer is currently unsigned; Windows may show an unknown-publisher warning. No automatic updater is configured.
 - Egress verification covers IPv4 only. A provider using IPv6 outside the VPN may still reject requests.

@@ -4,7 +4,7 @@ A Windows desktop dashboard for live OpenCode work. Choose which sessions to mon
 
 [![Windows release check](https://github.com/edisonmalasan/opc-rotate/actions/workflows/windows.yml/badge.svg)](https://github.com/edisonmalasan/opc-rotate/actions/workflows/windows.yml) · [MIT license](LICENSE) · [Changelog](CHANGELOG.md)
 
-![OpenCode Recovery showing project-grouped sessions, per-session recovery route lines, monitoring choices, and a session inspector](docs/images/dashboard.jpg)
+![OpenCode Recovery showing flat session rows with per-session recovery route lines, the app-wide recovery mode, monitoring choices, and a session inspector](docs/images/dashboard.jpg)
 
 *Development preview with sample data. No live connection is shown.*
 
@@ -16,8 +16,9 @@ Installers will be listed under [GitHub Releases](https://github.com/edisonmalas
 
 ## What it does
 
-- Shows live tabs from Orca and other terminals beneath project folders, including idle and background sessions.
+- Shows live tabs from Orca and other terminals as flat rows, including idle and background sessions.
 - Saves monitoring choices per session or terminal, with editable continuation prompts.
+- Watches either for provider rate-limit failures, recovered by changing the public IP, or for a session whose turn has finished, recovered with a prompt and no network change.
 - Shows each session's recovery stage, retry eligibility, verified IP-change count, and last confirmed prompt time.
 - Ranks VPN Gate relays by ping and advertised speed, then controls the separately installed SoftEther client.
 - Waits for detected work to become idle, verifies a changed public IPv4 address, and addresses continuation to the exact affected session.
@@ -29,10 +30,13 @@ Installers will be listed under [GitHub Releases](https://github.com/edisonmalas
 2. Use **OpenCode v2 with CLI tab-plugin support** (verified with 2.0.32). For Orca terminals, also make the `orca` CLI available on `PATH`.
 3. Install and open Recovery. Keep your existing terminals open. If a session is missing, reopen that OpenCode client once to load Recovery's presence plugin.
 4. Select the sessions or terminals you want included, then enable **Monitoring**. It starts off on a fresh install.
+5. Choose what the app watches for. The **Recovery** control in the top bar sets the mode for every session; a session can override it in its inspector.
 
-Recovery recognizes rate-limit/quota failures and the specific failed-provider message “OpenCode's free tier can only be used from within OpenCode.” A VPN change affects the whole machine, so all detected busy sessions delay it, including excluded sessions. A new IP does not guarantee the provider will accept the request.
+**Rate limits** recognizes rate-limit/quota failures and the specific failed-provider message “OpenCode's free tier can only be used from within OpenCode.” Recovery changes the public IP through a relay, waits for the new address to take effect, verifies it, and only then sends the continuation. A VPN change affects the whole machine, so all detected busy sessions delay it, including excluded sessions. A new IP does not guarantee the provider will accept the request.
 
-The default continuation is **“Continue from where you stopped after the rate limit”**. You can edit it globally or per session. Recovery preserves your terminals and the selected OpenCode tab.
+**Worker Idle** watches for a session whose turn finished cleanly and sends it a continuation prompt. It never touches the network, and the VPN parts of the interface are hidden while it is the mode in use. A session that still has subagents working is never treated as idle.
+
+The two modes use different default continuations, and you can edit either of them globally or per session. Recovery preserves your terminals and the selected OpenCode tab.
 
 See [setup, usage, and troubleshooting](docs/USAGE.md) for requirements, delivery safeguards, local data, and uninstall steps.
 

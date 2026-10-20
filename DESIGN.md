@@ -438,7 +438,8 @@ Borders are directional where they appear at all: a dark top edge and a faint li
 ### The Route Line
 - **Shape:** a `240px` horizontal lane of six stations, `10px` tall, with the station markers sitting on the column edges.
 - **States:** a travelled station is a solid `#8fbe73` dot on a solid segment; the current station is a `9px` lime ring on a lime segment; a future station is a hollow dot on a hairline; a held terminus is amber; a broken terminus is a vermilion square with the following segment *removed*, so the line visibly stops.
-- **Skipped stations:** a recovery that never changes the public IP leaves the two route stations as short hairline dashes, so the operator can see that this run skipped the relay entirely. The station count never changes, so lanes stay aligned across rows.
+- **Skipped stations:** a recovery that never changes the public IP leaves the two relay stations as short hairline dashes *and breaks the rule across them*, so the route that was not taken is visible rather than merely absent. The station count never changes, so lanes stay aligned across rows.
+- **The live station breathes:** while a recovery is moving, the current station pulses gently. `prefers-reduced-motion` still stops it.
 - **Rule:** the lane's presence is the signal that a session is in recovery. A session that is only being watched shows no lane at all.
 
 ### The Route Track
@@ -456,12 +457,12 @@ Borders are directional where they appear at all: a dark top edge and a faint li
 
 ### Status Indicators
 - **Style:** `6px` dots — `#76787d` idle, `#b5b6b9` working, `#d9ae7f` rate-limited, `#94a39b` unknown status, `#91ba9c` connected, `#e5b885` needs attention.
-- **Turn ended:** a session whose turn finished cleanly gets a *hollow* dot in porcelain rather than a filled one. It is not a failure and not a warning — it is an offer.
-- **Rule:** a dot never carries meaning alone. It always sits beside the word **Idle**, **Working**, **Turn ended**, **Rate limited**, **Provider blocked**, or **Status unavailable**.
+- **Worker Idle:** a session whose turn finished cleanly gets a *hollow* dot in porcelain rather than a filled one. It is not a failure and not a warning - it is an offer.
+- **Rule:** a dot never carries meaning alone. It always sits beside the word **Idle**, **Working**, **Worker Idle**, **Rate limited**, **Provider blocked**, or **Status unavailable**.
 
 ### Watcher Choice
-- **Shape:** a label and a two-option segmented control, one for the session and one for the app-wide default.
-- **Rule:** the two options are **Rate limits** and **Turn ended**, and the choice is never a colour. A watcher that does not touch the network is also the one that removes the VPN route from the screen, and the interface says so by having nothing to show.
+- **Shape:** two controls. The app-wide one is a single button in the toolbar, immediately beside the Monitoring switch, reading **Recovery** followed by the current mode. The per-session one is a three-option segmented control in the inspector: **Rate limits**, **Worker Idle**, **Default**, with a note that says whether the session is following the app-wide mode or has its own.
+- **Rule:** the two modes are **Rate limits** and **Worker Idle**, and the choice is never a colour. A watcher that does not touch the network is also the one that removes the VPN route from the screen, and the interface says so by having nothing to show.
 
 ### Activity Rows
 - **Style:** `76px` minimum-height rows separated by hairlines, with a `24px` severity marker on the left, the level above the prose, and a monospaced timestamp on the right.
