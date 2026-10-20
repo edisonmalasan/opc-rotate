@@ -68,15 +68,13 @@ export type Snapshot = {
   watcher: string;
   sessionWatcher: Record<string, string>;
   /** The prompt sent to a session that simply finished its turn. */
-  continuePrompt: string;
   /** Whether anything on screen still depends on the VPN route. */
   vpnNeeded: boolean;
   preferredServer: string | null;
   lastError: string | null;
 };
 
-export const DEFAULT_PROMPT =
-  "Continue from where you stopped after the rate limit";
+export const DEFAULT_PROMPT = "Continue";
 
 export const EMPTY_SNAPSHOT: Snapshot = {
   recovery: {},
@@ -97,7 +95,6 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   globalPrompt: DEFAULT_PROMPT,
   watcher: "worker-idle",
   sessionWatcher: {},
-  continuePrompt: "Continue where you left off.",
   vpnNeeded: false,
   preferredServer: null,
   lastError: null,

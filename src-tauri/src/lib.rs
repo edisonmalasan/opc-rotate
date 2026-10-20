@@ -211,7 +211,7 @@ impl Inner {
             global_prompt: self.settings.global_prompt.clone(),
             watcher: self.settings.watcher.clone(),
             session_watcher: self.settings.session_watcher.clone(),
-            continue_prompt: self.settings.continue_prompt.clone(),
+
             // The route only matters while a relay is connected, a recovery
             // still has to change the public IP, or some session still watches
             // rate limits.
@@ -976,7 +976,7 @@ async fn continue_stopped(app: &AppHandle, controller: &Arc<Controller>, pending
                 .prompt_overrides
                 .get(id)
                 .cloned()
-                .unwrap_or_else(|| inner.settings.continue_prompt.clone());
+                .unwrap_or_else(|| inner.settings.global_prompt.clone());
             (target, prompt, inner.pause_epoch)
         };
         let Some(target) = target else {
@@ -1540,21 +1540,6 @@ async fn set_session_watcher(
     Ok(state.snapshot().await)
 }
 
-#[tauri::command]
-async fn set_continue_prompt(
-    app: AppHandle,
-    state: State<'_, Arc<Controller>>,
-    prompt: String,
-) -> Result<Snapshot, String> {
-    if prompt.trim().is_empty() {
-        return Err("Continuation prompt cannot be empty".into());
-    }
-    state.inner.lock().await.settings.continue_prompt = prompt.trim().to_string();
-    state.save().await;
-    state.emit(&app).await;
-    Ok(state.snapshot().await)
-}
-
 fn normalize_watcher(watcher: &str) -> Result<&'static str, String> {
     match watcher {
         models::WATCH_RATE_LIMIT => Ok(models::WATCH_RATE_LIMIT),
@@ -1741,7 +1726,6 @@ pub fn run() {
             set_prompt_override,
             set_watcher,
             set_session_watcher,
-            set_continue_prompt,
             set_preferred_server,
             recover_now,
             select_session_tab,

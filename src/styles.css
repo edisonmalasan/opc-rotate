@@ -1441,26 +1441,27 @@ button:focus-visible {
   color: var(--ink);
   cursor: pointer;
 }
+/* The watcher choice stacks: the label, the control, then the note.
+   Nothing here can stretch, so a mode button never grows a tall block. */
 .watcher-setting {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 42px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
   color: var(--ink);
 }
-.watcher-setting {
-  flex-wrap: wrap;
-}
-.watcher-setting > span {
+.watcher-setting > span:first-child {
   font-size: var(--font-label);
 }
 .watcher-setting .segmented-control {
-  flex: 0 0 auto;
-  max-width: 240px;
+  align-self: flex-start;
+  max-width: 100%;
+}
+.watcher-setting .segmented-control button {
+  height: 28px;
 }
 .watcher-setting-note {
-  flex: 1 0 100%;
+  flex: 0 0 auto;
   color: var(--ink-faint);
   font-size: var(--font-small);
 }

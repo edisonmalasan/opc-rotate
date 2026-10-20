@@ -45,7 +45,6 @@ export function createPreviewSnapshot(): Snapshot {
     sessionTerminals: {},
     watcher: ratePreview || recoveryPreview ? "rate-limit" : "worker-idle",
     sessionWatcher: {},
-    continuePrompt: "Continue where you left off.",
     vpnNeeded: ratePreview || recoveryPreview,
     phase: "idle",
     vpnStatus: "connected",

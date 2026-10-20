@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_PROMPT: &str = "Continue from where you stopped after the rate limit";
-pub const DEFAULT_CONTINUE_PROMPT: &str = "Continue where you left off.";
+pub const DEFAULT_PROMPT: &str = "Continue";
 /// Watch for provider rate-limit failures and recover by changing the public IP.
 pub const WATCH_RATE_LIMIT: &str = "rate-limit";
 /// Watch for a worker that has gone idle and continue it with a prompt, without
@@ -103,18 +102,16 @@ pub struct Settings {
     #[serde(default)]
     pub session_watcher: std::collections::HashMap<String, String>,
     /// The prompt sent to a session that simply finished its turn.
-    #[serde(default = "default_continue_prompt")]
-    pub continue_prompt: String,
+    /// Bumped when the meaning of the default prompt changed, so a saved
+    /// prompt from the older two-mode design is replaced exactly once.
+    #[serde(default)]
+    pub prompt_version: u32,
     pub managed_profile: Option<String>,
     pub preferred_server: Option<String>,
 }
 
 fn default_watcher() -> String {
     WATCH_WORKER_IDLE.into()
-}
-
-fn default_continue_prompt() -> String {
-    DEFAULT_CONTINUE_PROMPT.into()
 }
 
 impl Settings {
@@ -153,9 +150,14 @@ impl Settings {
         Ok(())
     }
 
+    /// The app used to keep two default prompts, one per watcher mode,
+    /// and the one that was sent did not always match the one on screen.
+    /// There is now a single default prompt, and a prompt saved under the
+    /// older design is replaced once.
     pub fn migrate_default_prompt(&mut self) {
-        if self.global_prompt == "Continue from where you stopped after the rate limit. Check the current state and avoid repeating completed actions." {
+        if self.prompt_version < 1 {
             self.global_prompt = DEFAULT_PROMPT.into();
+            self.prompt_version = 1;
         }
     }
 
@@ -205,7 +207,7 @@ impl Default for Settings {
             prompt_overrides: Default::default(),
             watcher: WATCH_WORKER_IDLE.to_string(),
             session_watcher: Default::default(),
-            continue_prompt: DEFAULT_CONTINUE_PROMPT.to_string(),
+            prompt_version: 1,
             managed_profile: None,
             preferred_server: None,
         }
@@ -325,7 +327,7 @@ mod tests {
         let mut settings = Settings::default();
         // A fresh install watches finished turns.
         assert_eq!(settings.watcher, WATCH_WORKER_IDLE);
-        assert_eq!(settings.continue_prompt, DEFAULT_CONTINUE_PROMPT);
+        assert_eq!(settings.global_prompt, DEFAULT_PROMPT);
 
         let session = SessionTarget {
             id: "api:one".into(),
@@ -387,7 +389,7 @@ mod tests {
         value.as_object_mut().unwrap().remove("continuePrompt");
         let settings: Settings = serde_json::from_value(value).unwrap();
         assert_eq!(settings.watcher, WATCH_WORKER_IDLE);
-        assert_eq!(settings.continue_prompt, DEFAULT_CONTINUE_PROMPT);
+        assert_eq!(settings.global_prompt, DEFAULT_PROMPT);
         assert!(settings.session_watcher.is_empty());
         let target = SessionTarget {
             id: "api:one".into(),
@@ -415,9 +417,10 @@ mod tests {
     }
 
     #[test]
-    fn migrates_the_previous_default_without_replacing_custom_prompts() {
+    fn a_prompt_saved_under_the_two_mode_design_is_replaced_once() {
         let mut settings = Settings {
             global_prompt: "Continue from where you stopped after the rate limit. Check the current state and avoid repeating completed actions.".into(),
+            prompt_version: 0,
             ..Settings::default()
         };
         settings.prompt_overrides.insert(
@@ -425,14 +428,17 @@ mod tests {
             "Check the current branch first".into(),
         );
         settings.migrate_default_prompt();
-        assert_eq!(
-            settings.global_prompt,
-            "Continue from where you stopped after the rate limit"
-        );
+        // The older design kept a prompt per watcher mode, and the one on
+        // screen was not always the one that was sent. There is one prompt
+        // now, and the saved one is replaced.
+        assert_eq!(settings.global_prompt, DEFAULT_PROMPT);
+        assert_eq!(settings.prompt_version, 1);
+        // A session's own prompt is untouched.
         assert_eq!(
             settings.prompt_overrides["api:session"],
             "Check the current branch first"
         );
+        // A prompt written after the change is kept.
         settings.global_prompt = "Resume the documentation review".into();
         settings.migrate_default_prompt();
         assert_eq!(settings.global_prompt, "Resume the documentation review");
@@ -457,10 +463,11 @@ pub struct Snapshot {
     pub other_sessions: Vec<SessionTarget>,
     pub other_sessions_notice: Option<String>,
     pub history: Vec<HistoryEntry>,
+    /// The default continuation prompt, sent to every session that has no
+    /// prompt of its own.
     pub global_prompt: String,
     pub watcher: String,
     pub session_watcher: std::collections::HashMap<String, String>,
-    pub continue_prompt: String,
     /// Whether anything on screen still depends on the VPN route.
     pub vpn_needed: bool,
     pub preferred_server: Option<String>,

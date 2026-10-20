@@ -37,11 +37,9 @@ import { changeMonitoring, isMonitored, terminalKey } from "./monitoring";
 
 type View = "sessions" | "relays" | "activity";
 type SessionFilter = "all" | "limited" | "busy" | "idle";
-type PromptKind = "rate-limit" | "worker-idle";
 type PromptEditor = {
   target: SessionTarget | null;
   instant: boolean;
-  kind: PromptKind;
 };
 type RunCommand = (
   command: string,
@@ -452,6 +450,7 @@ function SessionInspector({
   onClose,
   onEdit,
   onEditDefault,
+  onUseDefault,
   run,
 }: {
   target: SessionTarget | null;
@@ -460,7 +459,8 @@ function SessionInspector({
   pending: string | null;
   onClose: () => void;
   onEdit: (target: SessionTarget, instant: boolean) => void;
-  onEditDefault: (kind: PromptKind) => void;
+  onEditDefault: () => void;
+  onUseDefault: (target: SessionTarget) => void;
   run: RunCommand;
 }) {
   if (!target)
@@ -482,10 +482,7 @@ function SessionInspector({
   // What actually applies to it right now.
   const sessionWatcher = watcherFor(snapshot, target);
   const workerIdleMode = sessionWatcher === WATCH_WORKER_IDLE;
-  const continueMode = workerIdleMode;
-  const effectivePrompt =
-    target.promptOverride ??
-    (continueMode ? snapshot.continuePrompt : snapshot.globalPrompt);
+  const effectivePrompt = target.promptOverride ?? snapshot.globalPrompt;
   const inProgress = !!progress && activeRecovery.has(progress.stage);
   const stopped = progress?.stage === "stopped";
   const showProgress = !!progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage));
@@ -677,6 +674,7 @@ function SessionInspector({
             <h3>Continuation prompt</h3>
             <button
               className="text-button"
+              title="Edit this session's prompt"
               onClick={(event) => onEdit(target, event.detail === 0)}
             >
               Edit
@@ -685,16 +683,15 @@ function SessionInspector({
           <p className="prompt-preview">{effectivePrompt}</p>
           <span className="detail-caption">
             {target.promptOverride
-              ? "Custom for this session"
-              : `Using the default ${continueMode ? "worker-idle" : "rate-limit"} prompt `}
-            {!target.promptOverride && (
-              <button
-                className="text-button"
-                onClick={() =>
-                  onEditDefault(continueMode ? "worker-idle" : "rate-limit")
-                }
-              >
-                Edit default
+              ? "This session's own prompt."
+              : "Used by every session."}
+            {target.promptOverride ? (
+              <button className="text-button" onClick={() => onUseDefault(target)}>
+                Use the default
+              </button>
+            ) : (
+              <button className="text-button" onClick={onEditDefault}>
+                Edit the default
               </button>
             )}
           </span>
@@ -846,24 +843,18 @@ function RelayInspector({
 function PromptDialog({
   editor,
   globalPrompt,
-  continuePrompt,
   onClose,
   run,
 }: {
   editor: PromptEditor;
   globalPrompt: string;
-  continuePrompt: string;
   onClose: () => void;
   run: RunCommand;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closing = useRef(false);
   const [value, setValue] = useState(
-    editor.target
-      ? (editor.target.promptOverride ?? "")
-      : editor.kind === "worker-idle"
-        ? continuePrompt
-        : globalPrompt,
+    editor.target ? (editor.target.promptOverride ?? "") : globalPrompt,
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -928,9 +919,7 @@ function PromptDialog({
           targetId: editor.target.id,
           prompt: useDefault ? null : value.trim() || null,
         })
-      : editor.kind === "worker-idle"
-        ? await run("set_continue_prompt", { prompt: value.trim() })
-        : await run("set_global_prompt", { prompt: value.trim() });
+      : await run("set_global_prompt", { prompt: value.trim() });
     setSaving(false);
     if (message) setError(message);
     else onClose();
@@ -1001,23 +990,17 @@ function PromptDialog({
         </h2>
         <p>
           {editor.target
-            ? `Customize the message for “${sessionTitle(editor.target.title)}”.`
-            : "Sent once to each affected session after the new connection is verified."}
+            ? `The message sent to “${sessionTitle(editor.target.title)}”.`
+            : "The message sent to each session the app recovers."}
         </p>
         <label htmlFor="continuation-prompt">
-          {editor.target ? "Custom prompt" : "Default prompt"}
+          {editor.target ? "This session's prompt" : "Default prompt"}
         </label>
         <textarea
           id="continuation-prompt"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder={
-            editor.target
-              ? editor.kind === "worker-idle"
-                ? continuePrompt
-                : globalPrompt
-              : "Enter a continuation prompt"
-          }
+          placeholder={globalPrompt}
           rows={6}
           disabled={saving}
           autoFocus
@@ -1280,8 +1263,6 @@ function App() {
           };
         if (command === "set_global_prompt")
           return { ...current, globalPrompt: args?.prompt as string };
-        if (command === "set_continue_prompt")
-          return { ...current, continuePrompt: args?.prompt as string };
         if (command === "set_watcher")
           return {
             ...current,
@@ -1564,7 +1545,6 @@ function App() {
               setEditor({
                 target: null,
                 instant: event.detail === 0,
-                kind: "rate-limit",
               })
             }
           >
@@ -1792,11 +1772,15 @@ function App() {
                 canRecover={desktop && !recovering}
                 pending={pending}
                 onClose={() => setSelectedId(null)}
-                onEdit={(target, instant) =>
-                  setEditor({ target, instant, kind: "rate-limit" })
+                onEdit={(target, instant) => setEditor({ target, instant })}
+                onEditDefault={() =>
+                  setEditor({ target: null, instant: true })
                 }
-                onEditDefault={(kind) =>
-                  setEditor({ target: null, instant: true, kind })
+                onUseDefault={(target) =>
+                  void run("set_prompt_override", {
+                    targetId: target.id,
+                    prompt: null,
+                  })
                 }
                 run={run}
               />
@@ -2034,7 +2018,6 @@ function App() {
         <PromptDialog
           editor={editor}
           globalPrompt={snapshot.globalPrompt}
-          continuePrompt={snapshot.continuePrompt}
           onClose={() => setEditor(null)}
           run={run}
         />
