@@ -853,6 +853,25 @@ button:focus-visible {
 .session-state.unknown i {
   background: var(--ink-faint);
 }
+.session-state.stopped {
+  color: var(--ink);
+}
+.session-state.stopped i {
+  background: transparent;
+  border: 1.5px solid var(--ink-dim);
+}
+.subagent-count {
+  color: var(--ink-dim);
+}
+.meta-part {
+  white-space: nowrap;
+}
+.subagent-count b {
+  color: var(--ink-muted);
+  font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 
 /* The route line — a session's place in its recovery, read across rows. */
 .session-recovery-column {
@@ -956,6 +975,13 @@ button:focus-visible {
 }
 .route-line .node.break + .node::before {
   display: none;
+}
+.route-line .node.skipped::after {
+  width: 7px;
+  height: 1px;
+  border: 0;
+  border-radius: 0;
+  background: var(--rule-strong);
 }
 .recovery-status {
   display: inline-flex;
@@ -1121,6 +1147,14 @@ button:focus-visible {
 }
 .route-track .station.break + .station::before {
   display: none;
+}
+.route-track .station.skipped {
+  color: var(--ink-faint);
+}
+.route-track .station.skipped .marker {
+  background: transparent;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
 }
 .route-track .station .at {
   margin-left: auto;
@@ -1420,6 +1454,21 @@ button:focus-visible {
   min-height: 40px;
   color: var(--ink);
   cursor: pointer;
+}
+.watcher-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  color: var(--ink);
+}
+.watcher-setting > span {
+  font-size: var(--font-label);
+}
+.watcher-setting .segmented-control {
+  flex: 0 0 auto;
+  max-width: 190px;
 }
 .monitor-setting small {
   display: block;

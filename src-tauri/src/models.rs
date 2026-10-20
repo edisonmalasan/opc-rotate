@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_PROMPT: &str = "Continue from where you stopped after the rate limit";
+pub const DEFAULT_CONTINUE_PROMPT: &str = "Continue where you left off.";
+/// Watch for provider rate-limit failures and recover by changing the public IP.
+pub const WATCH_RATE_LIMIT: &str = "rate-limit";
+/// Watch for a finished turn and continue it with a prompt, without changing the IP.
+pub const WATCH_CONTINUE: &str = "continue";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +47,12 @@ pub struct SessionTarget {
     pub orca_handle: Option<String>,
     #[serde(default)]
     pub via_plugin: bool,
+    /// Identifies the operator input a stopped session is waiting on.
+    #[serde(default)]
+    pub stop_key: Option<String>,
+    /// Child sessions of this session that are still executing.
+    #[serde(default)]
+    pub working_subagents: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -62,6 +73,13 @@ pub struct RecoveryProgress {
     pub ip_changes: u8,
     pub max_ip_changes: u8,
     pub last_sent_at: Option<u64>,
+    /// Whether this recovery changes the machine's public IP.
+    #[serde(default = "default_true")]
+    pub changes_ip: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -76,8 +94,24 @@ pub struct Settings {
     pub session_terminals: std::collections::HashMap<String, String>,
     pub global_prompt: String,
     pub prompt_overrides: std::collections::HashMap<String, String>,
+    /// The watcher mode every session follows unless it overrides it.
+    #[serde(default = "default_watcher")]
+    pub watcher: String,
+    #[serde(default)]
+    pub session_watcher: std::collections::HashMap<String, String>,
+    /// The prompt sent to a session that simply finished its turn.
+    #[serde(default = "default_continue_prompt")]
+    pub continue_prompt: String,
     pub managed_profile: Option<String>,
     pub preferred_server: Option<String>,
+}
+
+fn default_watcher() -> String {
+    WATCH_RATE_LIMIT.into()
+}
+
+fn default_continue_prompt() -> String {
+    DEFAULT_CONTINUE_PROMPT.into()
 }
 
 impl Settings {
@@ -121,6 +155,19 @@ impl Settings {
             self.global_prompt = DEFAULT_PROMPT.into();
         }
     }
+
+    /// The watcher mode that applies to a session: its own choice, then the
+    /// app-wide default.
+    pub fn watcher_for(&self, target: &SessionTarget) -> &str {
+        self.session_watcher
+            .get(&target.id)
+            .map(String::as_str)
+            .unwrap_or(self.watcher.as_str())
+    }
+
+    pub fn watches_continue(&self, target: &SessionTarget) -> bool {
+        self.watcher_for(target) == WATCH_CONTINUE
+    }
 }
 
 impl Default for Settings {
@@ -132,6 +179,9 @@ impl Default for Settings {
             session_terminals: Default::default(),
             global_prompt: DEFAULT_PROMPT.to_string(),
             prompt_overrides: Default::default(),
+            watcher: WATCH_RATE_LIMIT.to_string(),
+            session_watcher: Default::default(),
+            continue_prompt: DEFAULT_CONTINUE_PROMPT.to_string(),
             managed_profile: None,
             preferred_server: None,
         }
@@ -247,6 +297,78 @@ mod tests {
     }
 
     #[test]
+    fn watcher_precedence_prefers_the_session_then_the_global_default() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.watcher, WATCH_RATE_LIMIT);
+        assert_eq!(settings.continue_prompt, DEFAULT_CONTINUE_PROMPT);
+
+        let session = SessionTarget {
+            id: "api:one".into(),
+            source: "other".into(),
+            terminal_id: Some("pane".into()),
+            ..Default::default()
+        };
+        // With no override the global default applies.
+        assert_eq!(settings.watcher_for(&session), WATCH_RATE_LIMIT);
+        assert!(!settings.watches_continue(&session));
+
+        settings.watcher = WATCH_CONTINUE.into();
+        // A session with no override follows the global default.
+        assert_eq!(settings.watcher_for(&session), WATCH_CONTINUE);
+        assert!(settings.watches_continue(&session));
+
+        settings
+            .session_watcher
+            .insert(session.id.clone(), WATCH_RATE_LIMIT.into());
+        // The session's own choice wins over the global default.
+        assert_eq!(settings.watcher_for(&session), WATCH_RATE_LIMIT);
+        assert!(!settings.watches_continue(&session));
+
+        // A sibling with no override still follows the global default.
+        let sibling = SessionTarget {
+            id: "api:two".into(),
+            ..session.clone()
+        };
+        assert_eq!(settings.watcher_for(&sibling), WATCH_CONTINUE);
+        assert!(settings.watches_continue(&sibling));
+    }
+
+    #[test]
+    fn old_settings_keep_the_rate_limit_watcher_and_the_default_continue_prompt() {
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("watcher");
+        value.as_object_mut().unwrap().remove("sessionWatcher");
+        value.as_object_mut().unwrap().remove("continuePrompt");
+        let settings: Settings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.watcher, WATCH_RATE_LIMIT);
+        assert_eq!(settings.continue_prompt, DEFAULT_CONTINUE_PROMPT);
+        assert!(settings.session_watcher.is_empty());
+        let target = SessionTarget {
+            id: "api:one".into(),
+            source: "other".into(),
+            ..Default::default()
+        };
+        assert_eq!(settings.watcher_for(&target), WATCH_RATE_LIMIT);
+        assert!(!settings.watches_continue(&target));
+
+        // An old session record keeps working without the new fields.
+        let old_target = serde_json::json!({
+            "id": "api:one",
+            "source": "other",
+            "title": "One",
+            "project": "C:/project",
+            "state": "idle",
+            "lastError": null,
+            "errorKey": null,
+            "promptOverride": null,
+            "updatedAt": 0,
+        });
+        let target: SessionTarget = serde_json::from_value(old_target).unwrap();
+        assert!(target.stop_key.is_none());
+        assert_eq!(target.working_subagents, 0);
+    }
+
+    #[test]
     fn migrates_the_previous_default_without_replacing_custom_prompts() {
         let mut settings = Settings {
             global_prompt: "Continue from where you stopped after the rate limit. Check the current state and avoid repeating completed actions.".into(),
@@ -290,6 +412,11 @@ pub struct Snapshot {
     pub other_sessions_notice: Option<String>,
     pub history: Vec<HistoryEntry>,
     pub global_prompt: String,
+    pub watcher: String,
+    pub session_watcher: std::collections::HashMap<String, String>,
+    pub continue_prompt: String,
+    /// Whether anything on screen still depends on the VPN route.
+    pub vpn_needed: bool,
     pub preferred_server: Option<String>,
     pub last_error: Option<String>,
 }

@@ -37,7 +37,12 @@ import { changeMonitoring, isMonitored, terminalKey } from "./monitoring";
 
 type View = "sessions" | "relays" | "activity";
 type SessionFilter = "all" | "limited" | "busy" | "idle";
-type PromptEditor = { target: SessionTarget | null; instant: boolean };
+type PromptKind = "rate-limit" | "continue";
+type PromptEditor = {
+  target: SessionTarget | null;
+  instant: boolean;
+  kind: PromptKind;
+};
 type RunCommand = (
   command: string,
   args?: Record<string, unknown>,
@@ -95,9 +100,19 @@ function stateLabel(state: string, error?: string | null) {
       ? "Working"
       : state === "idle"
         ? "Idle"
-        : state === "completed"
-          ? "Completed"
-          : "Status unavailable";
+        : state === "stopped"
+          ? "Turn ended"
+          : state === "completed"
+            ? "Completed"
+            : "Status unavailable";
+}
+
+const WATCH_RATE_LIMIT = "rate-limit";
+const WATCH_CONTINUE = "continue";
+
+/** The watcher mode that applies to a session: its own, then the app default. */
+function watcherFor(snapshot: Snapshot, target: SessionTarget) {
+  return snapshot.sessionWatcher?.[target.id] ?? snapshot.watcher ?? WATCH_RATE_LIMIT;
 }
 
 function tabLabel(target: SessionTarget) {
@@ -179,25 +194,58 @@ const routeIndex: Record<string, number> = {
   cooldown: 5,
 };
 
-type RouteNode = "done" | "current" | "held" | "todo" | "break" | "terminated";
+type RouteNodeState =
+  | "done"
+  | "current"
+  | "held"
+  | "todo"
+  | "break"
+  | "terminated"
+  | "skipped";
 
 /**
  * The recovery route as a fixed sequence of stations. A session with no route
  * (never started, paused, unavailable) returns null and shows no line at all.
+ * A recovery that never changes the public IP skips the route stations.
  */
-function routeNodes(stage: string): RouteNode[] | null {
-  if (stage === "sent") return ["done", "done", "done", "done", "done", "done"];
-  if (stage === "stopped") return ["done", "done", "done", "done", "done", "terminated"];
-  if (stage === "uncertain") return ["done", "done", "done", "done", "done", "break"];
-  if (stage === "failed") return ["done", "done", "break", "todo", "todo", "todo"];
-  const at = routeIndex[stage];
-  if (at === undefined) return null;
-  if (stage === "cooldown") return ["done", "done", "done", "done", "done", "held"];
-  return routeStations.map((_, index) => (index < at ? "done" : index === at ? "current" : "todo"));
+function routeNodes(
+  stage: string,
+  changesIp = true,
+): RouteNodeState[] | null {
+  let nodes: RouteNodeState[] | null = null;
+  if (stage === "sent") nodes = ["done", "done", "done", "done", "done", "done"];
+  else if (stage === "stopped")
+    nodes = ["done", "done", "done", "done", "done", "terminated"];
+  else if (stage === "uncertain")
+    nodes = ["done", "done", "done", "done", "done", "break"];
+  else if (stage === "failed")
+    nodes = ["done", "done", "break", "todo", "todo", "todo"];
+  else {
+    const at = routeIndex[stage];
+    if (at === undefined) return null;
+    nodes =
+      stage === "cooldown"
+        ? ["done", "done", "done", "done", "done", "held"]
+        : routeStations.map((_, index) =>
+            index < at ? "done" : index === at ? "current" : "todo",
+          );
+  }
+  if (!changesIp) {
+    nodes = nodes.map((state, index) =>
+      index === 2 || index === 3 ? "skipped" : state,
+    );
+  }
+  return nodes;
 }
 
-function RouteLine({ stage }: { stage: string }) {
-  const nodes = routeNodes(stage);
+function RouteLine({
+  stage,
+  changesIp = true,
+}: {
+  stage: string;
+  changesIp?: boolean;
+}) {
+  const nodes = routeNodes(stage, changesIp);
   if (!nodes) return null;
   return (
     <span className="route-line" aria-hidden="true">
@@ -208,10 +256,18 @@ function RouteLine({ stage }: { stage: string }) {
   );
 }
 
-function RouteTrack({ stage }: { stage: string }) {
-  const nodes = routeNodes(stage);
+function RouteTrack({
+  stage,
+  changesIp = true,
+}: {
+  stage: string;
+  changesIp?: boolean;
+}) {
+  const nodes = routeNodes(stage, changesIp);
   if (!nodes) return null;
-  const reached = nodes.findIndex((state) => state !== "todo" && state !== "done");
+  const reached = nodes.findIndex(
+    (state) => state !== "todo" && state !== "done" && state !== "skipped",
+  );
   return (
     <ol className="route-track">
       {routeStations.map((station, index) => (
@@ -331,12 +387,15 @@ function SessionItem({
           </strong>
           <small>
             <StateLabel state={target.state} error={target.lastError} />
-            <span aria-hidden="true">·</span>
-            {tabLabel(target)}
+            <span className="meta-part">· {tabLabel(target)}</span>
             {target.promptOverride && (
-              <>
-                <span>·</span>Custom prompt
-              </>
+              <span className="meta-part">· Custom prompt</span>
+            )}
+            {(target.workingSubagents ?? 0) > 0 && (
+              <span className="meta-part subagent-count">
+                · <b>{target.workingSubagents}</b> subagent
+                {target.workingSubagents === 1 ? "" : "s"} working
+              </span>
             )}
             {target.sessionId && (
               <code className="session-id">· {target.sessionId}</code>
@@ -346,7 +405,10 @@ function SessionItem({
         <span className="session-recovery-column">
           {progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage)) ? (
             <>
-              <RouteLine stage={progress.stage} />
+              <RouteLine
+                stage={progress.stage}
+                changesIp={progress.changesIp !== false}
+              />
               <span className="recovery-meta">
                 <RecoveryStatus progress={progress} bare />
                 {progress.ipChanges > 0 && (
@@ -374,6 +436,7 @@ function SessionInspector({
   pending,
   onClose,
   onEdit,
+  onEditDefault,
   run,
 }: {
   target: SessionTarget | null;
@@ -382,6 +445,7 @@ function SessionInspector({
   pending: string | null;
   onClose: () => void;
   onEdit: (target: SessionTarget, instant: boolean) => void;
+  onEditDefault: (kind: PromptKind) => void;
   run: RunCommand;
 }) {
   if (!target)
@@ -397,6 +461,11 @@ function SessionInspector({
     );
   const monitored = isMonitored(snapshot, target);
   const progress = snapshot.recovery?.[target.id];
+  const sessionWatcher = watcherFor(snapshot, target);
+  const continueMode = sessionWatcher === WATCH_CONTINUE;
+  const effectivePrompt =
+    target.promptOverride ??
+    (continueMode ? snapshot.continuePrompt : snapshot.globalPrompt);
   const inProgress = !!progress && activeRecovery.has(progress.stage);
   const stopped = progress?.stage === "stopped";
   const showProgress = !!progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage));
@@ -447,7 +516,12 @@ function SessionInspector({
         )}
         <section className="inspector-section recovery-panel" aria-label="Session recovery progress">
           <h3>Recovery</h3>
-          {showProgress && <RouteTrack stage={progress.stage} />}
+          {showProgress && (
+            <RouteTrack
+              stage={progress.stage}
+              changesIp={progress.changesIp !== false}
+            />
+          )}
           <div role="status" aria-live="polite" aria-atomic="true">
             {showProgress ? <RecoveryStatus progress={progress} detailed /> : <strong className="recovery-summary">{!monitored ? "Not monitored" : snapshot.monitoring ? "Watching this session" : "Monitoring paused"}</strong>}
           </div>
@@ -465,6 +539,62 @@ function SessionInspector({
         </section>
         <section className="inspector-section">
           <h3>Monitoring</h3>
+          <div className="watcher-setting">
+            <span>Watch this session for</span>
+            <div
+              className="segmented-control"
+              role="group"
+              aria-label="What this session is watched for"
+            >
+              <button
+                className={sessionWatcher === WATCH_RATE_LIMIT ? "active" : ""}
+                disabled={pending !== null}
+                onClick={() =>
+                  run("set_session_watcher", {
+                    targetId: target.id,
+                    watcher: WATCH_RATE_LIMIT,
+                  })
+                }
+              >
+                Rate limits
+              </button>
+              <button
+                className={sessionWatcher === WATCH_CONTINUE ? "active" : ""}
+                disabled={pending !== null}
+                onClick={() =>
+                  run("set_session_watcher", {
+                    targetId: target.id,
+                    watcher: WATCH_CONTINUE,
+                  })
+                }
+              >
+                Turn ended
+              </button>
+            </div>
+          </div>
+          <div className="watcher-setting">
+            <span>Default for all sessions</span>
+            <div
+              className="segmented-control"
+              role="group"
+              aria-label="What sessions are watched for by default"
+            >
+              <button
+                className={snapshot.watcher === WATCH_RATE_LIMIT ? "active" : ""}
+                disabled={pending !== null}
+                onClick={() => run("set_watcher", { watcher: WATCH_RATE_LIMIT })}
+              >
+                Rate limits
+              </button>
+              <button
+                className={snapshot.watcher === WATCH_CONTINUE ? "active" : ""}
+                disabled={pending !== null}
+                onClick={() => run("set_watcher", { watcher: WATCH_CONTINUE })}
+              >
+                Turn ended
+              </button>
+            </div>
+          </div>
           <label className="monitor-setting">
             <span>Monitor this session</span>
             <input
@@ -538,13 +668,21 @@ function SessionInspector({
               Edit
             </button>
           </div>
-          <p className="prompt-preview">
-            {target.promptOverride || snapshot.globalPrompt}
-          </p>
+          <p className="prompt-preview">{effectivePrompt}</p>
           <span className="detail-caption">
             {target.promptOverride
               ? "Custom for this session"
-              : "Using the default prompt"}
+              : `Using the default ${continueMode ? "turn-ended" : "rate-limit"} prompt `}
+            {!target.promptOverride && (
+              <button
+                className="text-button"
+                onClick={() =>
+                  onEditDefault(continueMode ? "continue" : "rate-limit")
+                }
+              >
+                Edit default
+              </button>
+            )}
           </span>
         </section>
       </div>
@@ -686,18 +824,24 @@ function RelayInspector({
 function PromptDialog({
   editor,
   globalPrompt,
+  continuePrompt,
   onClose,
   run,
 }: {
   editor: PromptEditor;
   globalPrompt: string;
+  continuePrompt: string;
   onClose: () => void;
   run: RunCommand;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closing = useRef(false);
   const [value, setValue] = useState(
-    editor.target ? (editor.target.promptOverride ?? "") : globalPrompt,
+    editor.target
+      ? (editor.target.promptOverride ?? "")
+      : editor.kind === "continue"
+        ? continuePrompt
+        : globalPrompt,
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -762,7 +906,9 @@ function PromptDialog({
           targetId: editor.target.id,
           prompt: useDefault ? null : value.trim() || null,
         })
-      : await run("set_global_prompt", { prompt: value.trim() });
+      : editor.kind === "continue"
+        ? await run("set_continue_prompt", { prompt: value.trim() })
+        : await run("set_global_prompt", { prompt: value.trim() });
     setSaving(false);
     if (message) setError(message);
     else onClose();
@@ -844,7 +990,11 @@ function PromptDialog({
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder={
-            editor.target ? globalPrompt : "Enter a continuation prompt"
+            editor.target
+              ? editor.kind === "continue"
+                ? continuePrompt
+                : globalPrompt
+              : "Enter a continuation prompt"
           }
           rows={6}
           disabled={saving}
@@ -1102,6 +1252,23 @@ function App() {
           };
         if (command === "set_global_prompt")
           return { ...current, globalPrompt: args?.prompt as string };
+        if (command === "set_continue_prompt")
+          return { ...current, continuePrompt: args?.prompt as string };
+        if (command === "set_watcher")
+          return {
+            ...current,
+            watcher: args?.watcher as string,
+            vpnNeeded:
+              args?.watcher === WATCH_CONTINUE ? false : current.vpnNeeded,
+          };
+        if (command === "set_session_watcher")
+          return {
+            ...current,
+            sessionWatcher: {
+              ...current.sessionWatcher,
+              [args?.targetId as string]: args?.watcher as string,
+            },
+          };
         if (command === "set_prompt_override") {
           const update = (target: SessionTarget) =>
             target.id === args?.targetId
@@ -1377,7 +1544,11 @@ function App() {
             title="Continuation prompt"
             disabled={!controlsAvailable}
             onClick={(event) =>
-              setEditor({ target: null, instant: event.detail === 0 })
+              setEditor({
+                target: null,
+                instant: event.detail === 0,
+                kind: "rate-limit",
+              })
             }
           >
             <Settings2 size={16} />
@@ -1429,6 +1600,7 @@ function App() {
           </div>
         </header>
 
+        {snapshot.vpnNeeded && (
         <div className="route-bar">
           <div className="route-copy">
             <strong>
@@ -1462,6 +1634,7 @@ function App() {
             <ChevronRight size={15} />
           </button>
         </div>
+        )}
         {!desktop && !preview && (
           <div className="connection-notice">
             <CircleAlert size={15} />
@@ -1581,7 +1754,12 @@ function App() {
                 canRecover={desktop && !recovering}
                 pending={pending}
                 onClose={() => setSelectedId(null)}
-                onEdit={(target, instant) => setEditor({ target, instant })}
+                onEdit={(target, instant) =>
+                  setEditor({ target, instant, kind: "rate-limit" })
+                }
+                onEditDefault={(kind) =>
+                  setEditor({ target: null, instant: true, kind })
+                }
                 run={run}
               />
             </div>
@@ -1818,6 +1996,7 @@ function App() {
         <PromptDialog
           editor={editor}
           globalPrompt={snapshot.globalPrompt}
+          continuePrompt={snapshot.continuePrompt}
           onClose={() => setEditor(null)}
           run={run}
         />

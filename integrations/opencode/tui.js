@@ -56,6 +56,24 @@ function recoveryError(message) {
     : null;
 }
 
+// A turn that finished cleanly: the agent is done and waiting for the operator.
+export function finishedTurn(message) {
+  return message?.type === "idle" && message?.outcome === "succeeded";
+}
+
+// The newest user message that the operator wrote, skipping any prompt
+// this client delivered. Pure: the message list and the app-created ids are
+// passed in, so the same rule can be checked without a live client.
+export function operatorMessageID(messages, appMessageIds) {
+  const items = Array.isArray(messages) ? messages : (messages?.data ?? []);
+  for (const message of items) {
+    if (message?.type !== "user") continue;
+    if (appMessageIds.has(message?.id)) continue;
+    return typeof message.id === "string" ? message.id : null;
+  }
+  return null;
+}
+
 export default {
   id: "opc-rotate.presence",
   async setup(context) {
@@ -75,6 +93,48 @@ export default {
       processing = false,
       servicePid = 0;
     let previousSessions = [];
+    // Message ids this client created, so an automatic continuation is never
+    // mistaken for the operator typing something new.
+    const appMessages = new Map();
+    // The last operator message seen for a session, kept per finished turn.
+    const stopKeys = new Map();
+
+    const appMessageIds = (sessionID) => {
+      let ids = appMessages.get(sessionID);
+      if (!ids) {
+        ids = new Set();
+        appMessages.set(sessionID, ids);
+      }
+      return ids;
+    };
+
+    async function childSessions(sessionID) {
+      try {
+        const children = payload(
+          await context.client.session.children({ sessionID }, options()),
+        );
+        return Array.isArray(children) ? children : (children?.data ?? []);
+      } catch {
+        return [];
+      }
+    }
+
+    // The newest user message that the operator wrote, skipping any prompt
+    // this client delivered.
+    async function latestOperatorMessageID(sessionID, skip) {
+      try {
+        const list = payload(
+          await context.client.message.list(
+            { sessionID, limit: 12, order: "desc" },
+            options(),
+          ),
+        );
+        return operatorMessageID(list, skip);
+      } catch {
+        /* The stop key is best effort; without it the session is not auto-continued. */
+      }
+      return null;
+    }
 
     async function publish() {
       if (disposed || writing) return;
@@ -113,6 +173,27 @@ export default {
                 Array.isArray(messages) ? messages : messages?.data
               )?.[0];
               const error = active[sessionID] ? null : recoveryError(latest);
+              const children = await childSessions(sessionID);
+              const workingSubagents = children.filter(
+                (child) => child?.id && active[child.id],
+              ).length;
+              const stopped =
+                !active[sessionID] &&
+                !error &&
+                workingSubagents === 0 &&
+                finishedTurn(latest);
+              let stopKey = null;
+              if (stopped) {
+                const cached = stopKeys.get(sessionID);
+                if (cached && cached.turn === latest.id) stopKey = cached.key;
+                else {
+                  stopKey = await latestOperatorMessageID(
+                    sessionID,
+                    appMessageIds(sessionID),
+                  );
+                  stopKeys.set(sessionID, { turn: latest.id, key: stopKey });
+                }
+              } else stopKeys.delete(sessionID);
               return {
                 sessionID,
                 title: info.title || "Untitled session",
@@ -121,11 +202,15 @@ export default {
                   ? "busy"
                   : error
                     ? "rate-limited"
-                    : "idle",
+                    : stopped
+                      ? "stopped"
+                      : "idle",
                 selected: sessionID === current,
                 lastError: error,
                 errorKey:
                   error && latest?.id ? `api:${sessionID}:${latest.id}` : null,
+                stopKey: stopKey ? `stop:${sessionID}:${stopKey}` : null,
+                workingSubagents,
                 updatedAt: info.time?.updated ?? Date.now(),
               };
             } catch {
@@ -139,6 +224,8 @@ export default {
                 project: old?.project || "",
                 selected: sessionID === current,
                 state: active[sessionID] ? "busy" : "unknown",
+                stopKey: null,
+                workingSubagents: old?.workingSubagents ?? 0,
               };
             }
           }),
@@ -271,6 +358,9 @@ export default {
                   throw new Error(
                     "Prompt receipt was not confirmed; delivery is uncertain",
                   );
+                // Remember the message this client created so the session's
+                // next stop is not mistaken for new operator input.
+                appMessageIds(request.sessionID).add(receipt.id);
                 reply = { status: "accepted", receipt: receipt.id };
               }
             } else throw new Error("Unsupported request");

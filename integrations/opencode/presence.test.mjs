@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import plugin from "./tui.js";
+import plugin, { finishedTurn, operatorMessageID } from "./tui.js";
 
 async function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "opc-tabs-"));
@@ -288,4 +288,40 @@ test("disposal removes presence and startup probes have no side effects", async 
   await f.tick(2000);
   assert.deepEqual(readdirSync(join(f.root, "presence")), []);
   assert.equal(await plugin.setup(undefined), undefined);
+});
+
+test("only a cleanly finished turn counts as a finished turn", () => {
+  assert.equal(finishedTurn({ type: "idle", outcome: "succeeded" }), true);
+  assert.equal(finishedTurn({ type: "idle", outcome: "failed" }), false);
+  assert.equal(finishedTurn({ type: "idle", outcome: "interrupted" }), false);
+  assert.equal(finishedTurn({ type: "assistant" }), false);
+  assert.equal(finishedTurn(undefined), false);
+});
+
+test("the stop key is the newest operator message, never the app's own continuation", () => {
+  const messages = [
+    { id: "app-1", type: "user" },
+    { id: "operator-2", type: "user" },
+    { id: "assistant-3", type: "assistant" },
+  ];
+  // The newest message wins when it was written by the operator.
+  assert.equal(operatorMessageID(messages, new Set()), "app-1");
+  // The app's own continuation prompt is skipped, so the operator's message
+  // is used as the stop key.
+  assert.equal(operatorMessageID(messages, new Set(["app-1"])), "operator-2");
+  // The wrapped list shape the client returns is accepted as well.
+  assert.equal(
+    operatorMessageID({ data: messages }, new Set(["app-1"])),
+    "operator-2",
+  );
+  // Without any operator message there is no stop key.
+  assert.equal(operatorMessageID([], new Set()), null);
+  assert.equal(
+    operatorMessageID([{ id: "assistant-3", type: "assistant" }], new Set()),
+    null,
+  );
+  assert.equal(
+    operatorMessageID([{ id: "app-1", type: "user" }], new Set(["app-1"])),
+    null,
+  );
 });

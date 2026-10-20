@@ -47,6 +47,7 @@ struct Inner {
     connected_server: Option<VpnServer>,
     last_error: Option<String>,
     pending: HashSet<String>,
+    continue_pending: HashSet<String>,
     ready_to_resume: HashSet<String>,
     handled: HashSet<String>,
     ip_attempts: HashMap<String, u8>,
@@ -59,6 +60,7 @@ enum RecoveryPlan {
     None,
     Resume(Vec<String>),
     Rotate(Vec<String>),
+    Continue(Vec<String>),
 }
 
 impl Inner {
@@ -68,6 +70,17 @@ impl Inner {
         stage: &str,
         detail: impl Into<String>,
         retry_at: Option<u64>,
+    ) {
+        self.progress_ip(id, stage, detail, retry_at, true);
+    }
+
+    fn progress_ip(
+        &mut self,
+        id: &str,
+        stage: &str,
+        detail: impl Into<String>,
+        retry_at: Option<u64>,
+        changes_ip: bool,
     ) {
         let detail = detail.into();
         let old = self.recovery.get(id);
@@ -85,6 +98,7 @@ impl Inner {
                 ip_changes: self.ip_attempts.get(id).copied().unwrap_or(0),
                 max_ip_changes: MAX_IP_CHANGES,
                 last_sent_at: self.last_recovery_at.get(id).copied(),
+                changes_ip,
             },
         );
     }
@@ -126,9 +140,14 @@ impl Inner {
         }
         self.pending.retain(|id| allowed.contains(id));
         self.ready_to_resume.retain(|id| allowed.contains(id));
+        self.continue_pending.retain(|id| allowed.contains(id));
     }
 
     fn recovery_plan(&self) -> RecoveryPlan {
+        if !self.continue_pending.is_empty() {
+            // Continuing a stopped session never touches the VPN, so it runs first.
+            return RecoveryPlan::Continue(self.continue_pending.iter().cloned().collect());
+        }
         if self.pending.is_empty() {
             return RecoveryPlan::None;
         }
@@ -169,6 +188,7 @@ impl Inner {
                     } else { "Saved IP-change count for this session" }.into(),
                     updated_at: 0, retry_at: None, ip_changes,
                     max_ip_changes: MAX_IP_CHANGES, last_sent_at: self.last_recovery_at.get(&target.id).copied(),
+                    changes_ip: true,
                 });
             }
         }
@@ -189,6 +209,18 @@ impl Inner {
             other_sessions_notice: self.other_sessions_notice.clone(),
             history: self.history.clone(),
             global_prompt: self.settings.global_prompt.clone(),
+            watcher: self.settings.watcher.clone(),
+            session_watcher: self.settings.session_watcher.clone(),
+            continue_prompt: self.settings.continue_prompt.clone(),
+            // The route only matters while a relay is connected or a recovery
+            // still has to change the public IP.
+            vpn_needed: self.connected_server.is_some()
+                || self.recovery.values().any(|progress| progress.changes_ip)
+                || self.pending.iter().any(|id| {
+                    self.target(id)
+                        .map(|target| !self.settings.watches_continue(&target))
+                        .unwrap_or(false)
+                }),
             preferred_server: self.settings.preferred_server.clone(),
             last_error: self.last_error.clone(),
         }
@@ -268,6 +300,7 @@ impl Controller {
                 connected_server: persisted.connected_server,
                 last_error: None,
                 pending: HashSet::new(),
+                continue_pending: HashSet::new(),
                 ready_to_resume: HashSet::new(),
                 handled: persisted.handled,
                 ip_attempts: persisted.ip_attempts,
@@ -430,6 +463,7 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
             );
         }
         inner.pending.retain(|id| available.contains(id));
+        inner.continue_pending.retain(|id| available.contains(id));
         inner.ready_to_resume.retain(|id| available.contains(id));
         let visible = inner
             .orca_sessions
@@ -490,6 +524,42 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
         if !inner.settings.monitors(&target) {
             continue;
         }
+        if inner.settings.watches_continue(&target) {
+            // This session is watched for a finished turn, not a provider
+            // failure. It is continued with a prompt and never a new IP.
+            if target.state != "stopped" {
+                if inner
+                    .recovery
+                    .get(&target.id)
+                    .is_some_and(|p| p.stage == "cooldown")
+                {
+                    inner.recovery.remove(&target.id);
+                }
+                inner.continue_pending.remove(&target.id);
+                continue;
+            }
+            let Some(key) = target.stop_key.clone() else {
+                continue;
+            };
+            if (target.via_plugin && target.client_id.is_none())
+                || (target.source == "orca" && !target.via_plugin)
+                || inner.handled.contains(&key)
+                || inner.continue_pending.contains(&target.id)
+                || !inner.settings.monitoring
+            {
+                continue;
+            }
+            inner.continue_pending.insert(target.id.clone());
+            inner.progress_ip(
+                &target.id,
+                "queued",
+                "Queued to continue this session with a prompt; the public IP is not changed",
+                None,
+                false,
+            );
+            new_incidents.push(target.title.clone());
+            continue;
+        }
         if target.state != "rate-limited" {
             if inner
                 .recovery
@@ -498,7 +568,7 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
             {
                 inner.recovery.remove(&target.id);
             }
-            if target.state == "completed" {
+            if target.state == "completed" || target.state == "stopped" {
                 inner.ip_attempts.remove(&target.id);
                 inner.last_recovery_at.remove(&target.id);
                 inner.recovery.remove(&target.id);
@@ -558,7 +628,8 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
 async fn start_recovery_if_needed(app: AppHandle, controller: Arc<Controller>) {
     {
         let mut inner = controller.inner.lock().await;
-        if inner.recovery_running || inner.pending.is_empty() {
+        if inner.recovery_running || (inner.pending.is_empty() && inner.continue_pending.is_empty())
+        {
             return;
         }
         inner.recovery_running = true;
@@ -608,6 +679,10 @@ async fn recover(app: &AppHandle, controller: &Arc<Controller>) -> Result<(), St
         RecoveryPlan::None => return Ok(()),
         RecoveryPlan::Resume(ready) => {
             resume_pending(app, controller, &ready).await;
+            return Ok(());
+        }
+        RecoveryPlan::Continue(ready) => {
+            continue_stopped(app, controller, &ready).await;
             return Ok(());
         }
         RecoveryPlan::Rotate(pending) => pending,
@@ -878,6 +953,174 @@ enum ResumeChannel {
     Api(opencode::OpenCodeClient, String),
 }
 
+/// Continue a session that finished its turn. The public IP is never changed:
+/// the session is simply asked to keep going, and the receipt is read back.
+async fn continue_stopped(app: &AppHandle, controller: &Arc<Controller>, pending: &[String]) {
+    for id in pending {
+        let (target, prompt, pause_epoch) = {
+            let inner = controller.inner.lock().await;
+            let target = inner.target(id);
+            let prompt = inner
+                .settings
+                .prompt_overrides
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| inner.settings.continue_prompt.clone());
+            (target, prompt, inner.pause_epoch)
+        };
+        let Some(target) = target else {
+            controller.inner.lock().await.continue_pending.remove(id);
+            continue;
+        };
+        // Only a live client can confirm that a continuation landed.
+        let channel: Result<Option<ResumeChannel>, String> = if target.via_plugin {
+            presence::discover(0).and_then(|live| {
+                let fresh = live
+                    .targets
+                    .iter()
+                    .find(|t| t.id == target.id)
+                    .ok_or("The OpenCode tab is no longer open")?;
+                if fresh.state == "unknown" {
+                    return Err("OpenCode status is unavailable".into());
+                }
+                Ok((fresh.state != "busy").then_some(ResumeChannel::Bridge))
+            })
+        } else {
+            Err("A stopped session can only be continued through its live client".into())
+        };
+        let channel = match channel {
+            Ok(Some(channel)) => channel,
+            Ok(None) => {
+                // The session started working again, so there is nothing to continue.
+                let mut inner = controller.inner.lock().await;
+                if inner.continue_pending.contains(id) && inner.pause_epoch == pause_epoch {
+                    if let Some(key) = &target.stop_key {
+                        inner.handled.insert(key.clone());
+                    }
+                    inner.continue_pending.remove(id);
+                    inner.progress_ip(
+                        id,
+                        "waiting-target",
+                        "The session started working again; no continuation was needed",
+                        None,
+                        false,
+                    );
+                }
+                drop(inner);
+                controller.emit(app).await;
+                continue;
+            }
+            Err(error) => {
+                let mut inner = controller.inner.lock().await;
+                if inner.continue_pending.contains(id) && inner.pause_epoch == pause_epoch {
+                    if let Some(key) = &target.stop_key {
+                        inner.handled.insert(key.clone());
+                    }
+                    inner.continue_pending.remove(id);
+                    inner.progress_ip(
+                        id,
+                        "blocked",
+                        format!("Waiting to continue: {error}"),
+                        None,
+                        false,
+                    );
+                }
+                drop(inner);
+                controller
+                    .record(
+                        app,
+                        "warning",
+                        format!("Waiting to continue {}: {error}", target.title),
+                    )
+                    .await;
+                continue;
+            }
+        };
+        {
+            let mut inner = controller.inner.lock().await;
+            if !inner.continue_pending.contains(id)
+                || !inner.settings.monitors(&target)
+                || inner.pause_epoch != pause_epoch
+            {
+                inner.continue_pending.remove(id);
+                inner.progress_ip(
+                    id,
+                    "paused",
+                    "Queued recovery canceled before submission",
+                    None,
+                    false,
+                );
+                continue;
+            }
+            // One continuation per stop: the operator's own message identifies it.
+            if let Some(key) = &target.stop_key {
+                inner.handled.insert(key.clone());
+            }
+            inner.continue_pending.remove(id);
+            inner.progress_ip(
+                id,
+                "sending",
+                "Submitting the continuation to this exact session; waiting for its receipt",
+                None,
+                false,
+            );
+        }
+        controller.save().await;
+        controller.emit(app).await;
+        let result = match channel {
+            ResumeChannel::Bridge => presence::command(&target, "prompt", Some(&prompt)).await,
+            ResumeChannel::Api(client, session_id) => client
+                .prompt(&session_id, &prompt)
+                .await
+                .map(presence::Delivery::Accepted),
+        };
+        match result {
+            Ok(presence::Delivery::Busy) => {
+                controller.inner.lock().await.progress_ip(
+                    id,
+                    "waiting-target",
+                    "The session became busy; no continuation was needed",
+                    None,
+                    false,
+                );
+            }
+            Ok(presence::Delivery::Accepted(receipt)) => {
+                let mut inner = controller.inner.lock().await;
+                inner.last_recovery_at.insert(id.clone(), process::now_ms());
+                inner.progress_ip(
+                    id,
+                    "sent",
+                    "Continuation receipt confirmed. Waiting for OpenCode's next result",
+                    None,
+                    false,
+                );
+                drop(inner);
+                controller
+                    .record(
+                        app,
+                        "success",
+                        format!("Sent continuation to {} (receipt {receipt})", target.title),
+                    )
+                    .await;
+            }
+            Err(error) => {
+                controller.inner.lock().await.progress_ip(id, "uncertain", format!("Delivery could not be confirmed; inspect the session before retrying. {error}"), None, false);
+                controller
+                    .record(
+                        app,
+                        "error",
+                        format!(
+                            "Could not confirm continuation for {}: {error}",
+                            target.title
+                        ),
+                    )
+                    .await
+            }
+        }
+    }
+    controller.save().await;
+}
+
 async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: &[String]) {
     for id in pending {
         let (target, prompt, pause_epoch) = {
@@ -1125,6 +1368,7 @@ async fn set_monitoring(
                 .pending
                 .iter()
                 .cloned()
+                .chain(inner.continue_pending.iter().cloned())
                 .chain(
                     inner
                         .recovery
@@ -1142,6 +1386,7 @@ async fn set_monitoring(
                 );
             }
             inner.pending.clear();
+            inner.continue_pending.clear();
             inner.ready_to_resume.clear();
         }
     }
@@ -1208,6 +1453,75 @@ async fn set_global_prompt(
     state.save().await;
     state.emit(&app).await;
     Ok(state.snapshot().await)
+}
+
+/// The watcher mode every session follows unless it overrides it.
+#[tauri::command]
+async fn set_watcher(
+    app: AppHandle,
+    state: State<'_, Arc<Controller>>,
+    watcher: String,
+) -> Result<Snapshot, String> {
+    let watcher = normalize_watcher(&watcher)?;
+    {
+        let mut inner = state.inner.lock().await;
+        inner.settings.watcher = watcher.to_string();
+        inner.continue_pending.clear();
+        inner.pending.clear();
+        inner.ready_to_resume.clear();
+    }
+    state.save().await;
+    state.emit(&app).await;
+    scan_sessions(&app, state.inner()).await;
+    Ok(state.snapshot().await)
+}
+
+/// One session's own watcher mode, overriding its terminal and the app default.
+#[tauri::command]
+async fn set_session_watcher(
+    app: AppHandle,
+    state: State<'_, Arc<Controller>>,
+    target_id: String,
+    watcher: String,
+) -> Result<Snapshot, String> {
+    let watcher = normalize_watcher(&watcher)?;
+    {
+        let mut inner = state.inner.lock().await;
+        if inner.target(&target_id).is_none() {
+            return Err("Session was not found".into());
+        }
+        inner
+            .settings
+            .session_watcher
+            .insert(target_id, watcher.to_string());
+    }
+    state.save().await;
+    state.emit(&app).await;
+    scan_sessions(&app, state.inner()).await;
+    Ok(state.snapshot().await)
+}
+
+#[tauri::command]
+async fn set_continue_prompt(
+    app: AppHandle,
+    state: State<'_, Arc<Controller>>,
+    prompt: String,
+) -> Result<Snapshot, String> {
+    if prompt.trim().is_empty() {
+        return Err("Continuation prompt cannot be empty".into());
+    }
+    state.inner.lock().await.settings.continue_prompt = prompt.trim().to_string();
+    state.save().await;
+    state.emit(&app).await;
+    Ok(state.snapshot().await)
+}
+
+fn normalize_watcher(watcher: &str) -> Result<&'static str, String> {
+    match watcher {
+        models::WATCH_RATE_LIMIT => Ok(models::WATCH_RATE_LIMIT),
+        models::WATCH_CONTINUE => Ok(models::WATCH_CONTINUE),
+        _ => Err("Unknown watcher mode".into()),
+    }
 }
 
 #[tauri::command]
@@ -1312,6 +1626,9 @@ async fn recover_now(
             );
         }
         inner.pending.insert(target_id.clone());
+        // A manual recovery is the full route change, so it supersedes an
+        // automatic continuation that may already be queued for this session.
+        inner.continue_pending.remove(&target_id);
         inner.progress(
             &target_id,
             "queued",
@@ -1367,6 +1684,9 @@ pub fn run() {
             set_session_monitoring,
             set_global_prompt,
             set_prompt_override,
+            set_watcher,
+            set_session_watcher,
+            set_continue_prompt,
             set_preferred_server,
             recover_now,
             select_session_tab,
@@ -1397,6 +1717,14 @@ mod tests {
         }
     }
 
+    /// A session whose turn simply ended, waiting on the operator's message.
+    fn stopped_target(id: &str, source: &str, stop_key: &str) -> SessionTarget {
+        let mut value = target(id, source, "stopped", None);
+        value.stop_key = Some(stop_key.into());
+        value.working_subagents = 0;
+        value
+    }
+
     fn inner() -> Inner {
         Inner {
             recovery: HashMap::new(),
@@ -1417,6 +1745,7 @@ mod tests {
             connected_server: None,
             last_error: None,
             pending: HashSet::new(),
+            continue_pending: HashSet::new(),
             ready_to_resume: HashSet::new(),
             handled: HashSet::new(),
             ip_attempts: HashMap::new(),
@@ -1619,5 +1948,101 @@ mod tests {
             .last_error
             .as_deref()
             .is_some_and(|error| error.contains("two new IPs")));
+    }
+
+    #[test]
+    fn a_stopped_session_in_continue_mode_is_queued_without_changing_the_public_ip() {
+        let mut state = inner();
+        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(state.continue_pending.contains("api:one"));
+        assert!(state.pending.is_empty());
+        assert_eq!(state.recovery["api:one"].stage, "queued");
+        assert!(!state.recovery["api:one"].changes_ip);
+    }
+
+    #[test]
+    fn a_rate_limited_session_still_needs_a_new_ip_in_rate_limit_mode() {
+        let mut state = inner();
+        state.orca_sessions = vec![target("api:one", "orca", "rate-limited", Some("failure"))];
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(state.pending.contains("api:one"));
+        assert!(state.continue_pending.is_empty());
+        assert_eq!(state.recovery["api:one"].stage, "queued");
+        assert!(state.recovery["api:one"].changes_ip);
+    }
+
+    #[test]
+    fn continue_mode_ignores_a_rate_limited_session() {
+        let mut state = inner();
+        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.orca_sessions = vec![target("api:one", "orca", "rate-limited", Some("failure"))];
+        assert!(queue_incidents(&mut state).is_empty());
+        assert!(state.pending.is_empty());
+        assert!(state.continue_pending.is_empty());
+        assert!(!state.recovery.contains_key("api:one"));
+    }
+
+    #[test]
+    fn a_stop_key_is_continued_only_once() {
+        let mut state = inner();
+        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
+        assert_eq!(queue_incidents(&mut state).len(), 1);
+        assert!(state.continue_pending.contains("api:one"));
+        // The same stop is never queued twice while it is already queued.
+        assert!(queue_incidents(&mut state).is_empty());
+        assert_eq!(state.continue_pending.len(), 1);
+        // Once the continuation is delivered the stop key stays handled.
+        state.handled.insert("stop:api:one:operator-1".into());
+        state.continue_pending.clear();
+        assert!(queue_incidents(&mut state).is_empty());
+        assert!(state.continue_pending.is_empty());
+        assert!(state.pending.is_empty());
+    }
+
+    #[test]
+    fn the_vpn_route_is_needed_only_when_something_changes_the_public_ip() {
+        let mut state = inner();
+        state.settings.watcher = models::WATCH_CONTINUE.into();
+        state.orca_sessions = vec![stopped_target("api:one", "orca", "stop:api:one:operator-1")];
+        assert!(!state.snapshot().vpn_needed);
+        queue_incidents(&mut state);
+        // Continuing a stopped session never needs the VPN route.
+        assert!(!state.snapshot().vpn_needed);
+
+        let mut rotating = inner();
+        rotating.orca_sessions = vec![target("api:two", "orca", "rate-limited", Some("failure"))];
+        queue_incidents(&mut rotating);
+        assert!(rotating.snapshot().vpn_needed);
+
+        // A connected relay keeps the route visible even without a pending incident.
+        let mut connected = inner();
+        connected.connected_server = Some(VpnServer {
+            id: "relay".into(),
+            host: "relay.example".into(),
+            ip: "198.51.100.7".into(),
+            port: 443,
+            country: "Japan".into(),
+            ping_ms: 42,
+            speed_mbps: 120.0,
+            sessions: 3,
+            score: 1.0,
+        });
+        assert!(connected.snapshot().vpn_needed);
+    }
+
+    #[test]
+    fn a_continuation_is_planned_before_any_ip_rotation() {
+        let mut state = inner();
+        state.pending.insert("api:one".into());
+        state.continue_pending.insert("api:two".into());
+        match state.recovery_plan() {
+            RecoveryPlan::Continue(ids) => assert_eq!(ids, vec!["api:two".to_string()]),
+            _ => panic!("a stopped session is continued before any rotation"),
+        }
+        state.continue_pending.clear();
+        assert!(matches!(state.recovery_plan(), RecoveryPlan::Rotate(_)));
     }
 }

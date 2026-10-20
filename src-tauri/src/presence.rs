@@ -22,6 +22,10 @@ struct Tab {
     #[serde(default)]
     error_key: Option<String>,
     #[serde(default)]
+    stop_key: Option<String>,
+    #[serde(default)]
+    working_subagents: u32,
+    #[serde(default)]
     updated_at: u64,
 }
 
@@ -171,12 +175,14 @@ fn read_at(directory: &Path, shared_pid: u32, now: u64) -> Presence {
                 title: tab.title.clone(),
                 project: tab.project.clone(),
                 state: match tab.state.as_str() {
-                    "idle" | "busy" | "rate-limited" => &tab.state,
+                    "idle" | "busy" | "rate-limited" | "stopped" => &tab.state,
                     _ => "unknown",
                 }
                 .into(),
                 last_error: tab.last_error.clone(),
                 error_key: tab.error_key.clone(),
+                stop_key: tab.stop_key.clone(),
+                working_subagents: tab.working_subagents,
                 updated_at: tab.updated_at,
                 terminal_id: Some(
                     record

@@ -27,6 +27,10 @@ export type SessionTarget = {
   sessionId?: string | null;
   orcaHandle?: string | null;
   viaPlugin?: boolean;
+  /** Identifies the operator input a stopped session is waiting on. */
+  stopKey?: string | null;
+  /** Child sessions of this session that are still executing. */
+  workingSubagents?: number;
 };
 
 export type HistoryEntry = { at: number; level: string; message: string };
@@ -39,6 +43,8 @@ export type RecoveryProgress = {
   ipChanges: number;
   maxIpChanges: number;
   lastSentAt: number | null;
+  /** Whether this recovery changes the machine's public IP. */
+  changesIp?: boolean;
 };
 
 export type Snapshot = {
@@ -58,6 +64,13 @@ export type Snapshot = {
   otherSessionsNotice: string | null;
   history: HistoryEntry[];
   globalPrompt: string;
+  /** The watcher mode every session follows unless it overrides it. */
+  watcher: string;
+  sessionWatcher: Record<string, string>;
+  /** The prompt sent to a session that simply finished its turn. */
+  continuePrompt: string;
+  /** Whether anything on screen still depends on the VPN route. */
+  vpnNeeded: boolean;
   preferredServer: string | null;
   lastError: string | null;
 };
@@ -82,6 +95,10 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   otherSessionsNotice: null,
   history: [],
   globalPrompt: DEFAULT_PROMPT,
+  watcher: "rate-limit",
+  sessionWatcher: {},
+  continuePrompt: "Continue where you left off.",
+  vpnNeeded: false,
   preferredServer: null,
   lastError: null,
 };
