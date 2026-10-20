@@ -417,6 +417,18 @@ async fn refresh_catalog(app: &AppHandle, controller: &Arc<Controller>) -> Resul
     Ok(())
 }
 
+/// A stop is continued once. A session that has already been continued for
+/// the stop it is on is waiting for new operator input, and the interface
+/// says so rather than leaving it looking unhandled.
+fn mark_continued(targets: &mut [SessionTarget], handled: &HashSet<String>) {
+    for target in targets.iter_mut() {
+        target.continued = target
+            .stop_key
+            .as_ref()
+            .is_some_and(|key| handled.contains(key));
+    }
+}
+
 async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
     let plugin_error = presence::install().err();
     let client = opencode::OpenCodeClient::discover(controller.http.clone());
@@ -491,12 +503,15 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
             .collect::<HashSet<_>>();
         inner.recovery.retain(|id, _| visible.contains(id));
         let overrides = inner.settings.prompt_overrides.clone();
+        let handled = inner.handled.clone();
         for target in inner.orca_sessions.iter_mut() {
             target.prompt_override = overrides.get(&target.id).cloned();
         }
         for target in inner.other_sessions.iter_mut() {
             target.prompt_override = overrides.get(&target.id).cloned();
         }
+        mark_continued(&mut inner.orca_sessions, &handled);
+        mark_continued(&mut inner.other_sessions, &handled);
         let bindings = inner
             .orca_sessions
             .iter()
@@ -2014,6 +2029,36 @@ mod tests {
         assert!(state.pending.is_empty());
         assert_eq!(state.recovery["api:one"].stage, "queued");
         assert!(!state.recovery["api:one"].changes_ip);
+    }
+
+    #[test]
+    fn a_session_that_was_continued_for_its_stop_is_marked_as_continued() {
+        let mut targets = vec![
+            SessionTarget {
+                id: "api:one".into(),
+                stop_key: Some("stop:api:one:operator-1".into()),
+                ..Default::default()
+            },
+            SessionTarget {
+                id: "api:two".into(),
+                stop_key: Some("stop:api:two:operator-1".into()),
+                ..Default::default()
+            },
+            SessionTarget {
+                id: "api:three".into(),
+                ..Default::default()
+            },
+        ];
+        let handled = ["stop:api:one:operator-1".to_string()]
+            .into_iter()
+            .collect::<HashSet<String>>();
+        mark_continued(&mut targets, &handled);
+
+        // The stop that was continued is marked, the one that was not is not,
+        // and a session with no stop at all is left alone.
+        assert!(targets[0].continued);
+        assert!(!targets[1].continued);
+        assert!(!targets[2].continued);
     }
 
     #[test]

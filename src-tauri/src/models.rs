@@ -52,6 +52,11 @@ pub struct SessionTarget {
     /// Identifies the operator input a stopped session is waiting on.
     #[serde(default)]
     pub stop_key: Option<String>,
+    /// Whether this session has already been continued for the stop it is on.
+    /// A stop is continued once, so the app waits for new operator input
+    /// before it continues the same session again.
+    #[serde(default)]
+    pub continued: bool,
     /// Child sessions of this session that are still executing.
     #[serde(default)]
     pub working_subagents: u32,

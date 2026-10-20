@@ -38,6 +38,7 @@ export function createPreviewSnapshot(): Snapshot {
     } : {
       "preview-session-2": { stage: "sending", detail: "Submitting the continuation to this exact session; waiting for its receipt", updatedAt: now - 4000, retryAt: null, ipChanges: 0, maxIpChanges: 2, lastSentAt: null, changesIp: false },
       "preview-session-3": { stage: "queued", detail: "Queued to continue this session with a prompt; the public IP is not changed", updatedAt: now - 9000, retryAt: null, ipChanges: 0, maxIpChanges: 2, lastSentAt: null, changesIp: false },
+      "preview-session-6": { stage: "sent", detail: "The session confirmed the continuation prompt", updatedAt: now - 600000, retryAt: null, ipChanges: 0, maxIpChanges: 2, lastSentAt: now - 620000, changesIp: false },
     },
     monitoring: false,
     sessionMonitoring: {},
@@ -158,9 +159,14 @@ export function createPreviewSnapshot(): Snapshot {
         source: "other",
         title: "Outside terminal smoke check",
         project: "C:\\Projects\\opc-rotate",
-        state: recoveryPreview ? "rate-limited" : "idle",
-        lastError: recoveryPreview ? "Rate limit exceeded" : null,
-        errorKey: recoveryPreview ? "preview-stopped-429" : null,
+        state: recoveryPreview || ratePreview ? "rate-limited" : "stopped",
+        lastError: recoveryPreview || ratePreview ? "Rate limit exceeded" : null,
+        errorKey: recoveryPreview || ratePreview ? "preview-stopped-429" : null,
+        stopKey:
+          recoveryPreview || ratePreview
+            ? null
+            : "stop:preview-session-6:msg_operator_1",
+        continued: !recoveryPreview && !ratePreview,
         promptOverride: null,
         updatedAt: now - 24000,
       },

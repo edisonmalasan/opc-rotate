@@ -161,6 +161,10 @@ function StateLabel({ state, error }: { state: string; error?: string | null }) 
   );
 }
 
+/** Why a session that is idle is not being continued again. */
+const CONTINUED_EXPLANATION =
+  "Continued once for this stop. Send a new message in the session and it will be continued again.";
+
 const recoveryLabels: Record<string, string> = {
   queued: "Queued", waiting: "Waiting for work", cooldown: "Retry eligible",
   checking: "Checking route", disconnecting: "Switching VPN", connecting: "Connecting VPN",
@@ -288,10 +292,12 @@ function RouteTrack({
 
 function RecoveryStatus({
   progress,
+  continued = false,
   detailed = false,
   bare = false,
 }: {
   progress?: RecoveryProgress;
+  continued?: boolean;
   detailed?: boolean;
   bare?: boolean;
 }) {
@@ -306,16 +312,24 @@ function RecoveryStatus({
   const remaining = progress.retryAt ? Math.max(0, Math.ceil((progress.retryAt - now) / 1000)) : 0;
   const label = progress.stage === "cooldown"
     ? remaining > 0 ? `Eligible in ${remaining}s` : "Awaiting next check"
-    : recoveryLabels[progress.stage] || "Recovery update";
+    : continued && progress.stage === "sent"
+      ? "Continued"
+      : recoveryLabels[progress.stage] || "Recovery update";
   if (bare) {
     return (
-      <span className={`recovery-status bare ${progress.stage}`} title={progress.detail}>
+      <span
+        className={`recovery-status bare ${progress.stage}`}
+        title={continued ? CONTINUED_EXPLANATION : progress.detail}
+      >
         <span role={progress.stage === "cooldown" ? "timer" : undefined} aria-live={progress.stage === "cooldown" ? "off" : undefined}>{label}</span>
       </span>
     );
   }
   return (
-    <span className={`recovery-status ${progress.stage} ${detailed ? "detailed" : ""}`} title={progress.detail}>
+    <span
+      className={`recovery-status ${progress.stage} ${detailed ? "detailed" : ""}`}
+      title={continued ? CONTINUED_EXPLANATION : progress.detail}
+    >
       {animatedRecovery.has(progress.stage) ? <LoaderCircle className="spin" size={13} aria-hidden="true" />
         : progress.stage === "sent" ? <Check size={13} aria-hidden="true" />
           : ["stopped", "failed", "uncertain"].includes(progress.stage) ? <CircleAlert size={13} aria-hidden="true" />
@@ -423,7 +437,7 @@ function SessionItem({
                 changesIp={progress.changesIp !== false}
               />
               <span className="recovery-meta">
-                <RecoveryStatus progress={progress} bare />
+                <RecoveryStatus progress={progress} continued={target.continued} bare />
                 {progress.ipChanges > 0 && (
                   <small title={`${progress.ipChanges} of ${progress.maxIpChanges} verified IP changes`}>
                     {progress.ipChanges}/{progress.maxIpChanges} IP
@@ -482,17 +496,23 @@ function SessionInspector({
   // What actually applies to it right now.
   const sessionWatcher = watcherFor(snapshot, target);
   const workerIdleMode = sessionWatcher === WATCH_WORKER_IDLE;
+  // The session is idle and has already been continued for this stop.
+  const continued = workerIdleMode && !!target.continued;
   const effectivePrompt = target.promptOverride ?? snapshot.globalPrompt;
   const inProgress = !!progress && activeRecovery.has(progress.stage);
   const stopped = progress?.stage === "stopped";
   const showProgress = !!progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage));
   const recoveryExplanation = !monitored && !showProgress
     ? "Enable this session below to include it in recovery."
-    : stopped && monitored
-      ? "The provider still rejected work after two verified IP changes. You can start another attempt manually."
-      : showProgress ? progress.detail
-        : !snapshot.monitoring ? "Turn on Monitoring for automatic recovery, or start a manual attempt."
-          : "Watching for provider errors. Recovery starts when this session needs it.";
+    : continued
+      ? CONTINUED_EXPLANATION
+      : stopped && monitored
+        ? "The provider still rejected work after two verified IP changes. You can start another attempt manually."
+        : showProgress ? progress.detail
+          : !snapshot.monitoring ? "Turn on Monitoring for automatic recovery, or start a manual attempt."
+            : workerIdleMode
+              ? "Watching for a turn to finish. Recovery continues the session with a prompt."
+              : "Watching for provider errors. Recovery starts when this session needs it.";
   const siblings = [...snapshot.orcaSessions, ...snapshot.otherSessions].filter(
     (item) => terminalKey(item) === terminalKey(target),
   );
@@ -540,7 +560,7 @@ function SessionInspector({
             />
           )}
           <div role="status" aria-live="polite" aria-atomic="true">
-            {showProgress ? <RecoveryStatus progress={progress} detailed /> : <strong className="recovery-summary">{!monitored ? "Not monitored" : snapshot.monitoring ? "Watching this session" : "Monitoring paused"}</strong>}
+            {showProgress ? <RecoveryStatus progress={progress} continued={continued} detailed /> : <strong className="recovery-summary">{!monitored ? "Not monitored" : snapshot.monitoring ? "Watching this session" : "Monitoring paused"}</strong>}
           </div>
           <p className="recovery-detail">{recoveryExplanation}</p>
           <details className="session-disclosure recovery-disclosure">
@@ -646,7 +666,11 @@ function SessionInspector({
           )}
           <p className="monitor-help">
             {snapshot.monitoring
-              ? terminalMixed ? "Some tabs have individual monitoring choices." : "Recovery waits for all working sessions."
+              ? terminalMixed
+                ? "Some tabs have individual monitoring choices."
+                : workerIdleMode
+                  ? "Recovery continues an idle session with a prompt."
+                  : "A recovery waits until every session is idle."
               : "Monitoring is paused. Your choices are saved."}
           </p>
         </section>

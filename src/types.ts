@@ -31,6 +31,8 @@ export type SessionTarget = {
   stopKey?: string | null;
   /** Child sessions of this session that are still executing. */
   workingSubagents?: number;
+  /** Whether this session has already been continued for the stop it is on. */
+  continued?: boolean;
 };
 
 export type HistoryEntry = { at: number; level: string; message: string };
