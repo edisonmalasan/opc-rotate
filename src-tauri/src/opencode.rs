@@ -5,6 +5,15 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+/// The message used whenever the shared service cannot be reached at all.
+/// A service that is gone has no live sessions, so it protects nothing.
+pub const SERVICE_NOT_RUNNING: &str = "OpenCode shared service is not running";
+
+/// Whether an error means the shared service was not running.
+pub fn service_is_gone(error: &str) -> bool {
+    error.starts_with(SERVICE_NOT_RUNNING)
+}
+
 pub struct OpenCodeClient {
     http: reqwest::Client,
     base: Url,
@@ -20,8 +29,7 @@ impl OpenCodeClient {
             .join("state")
             .join("opencode")
             .join("service.json");
-        let content = std::fs::read_to_string(path)
-            .map_err(|_| "OpenCode shared service is not running".to_string())?;
+        let content = std::fs::read_to_string(path).map_err(|_| SERVICE_NOT_RUNNING.to_string())?;
         let json: Value = serde_json::from_str(&content)
             .map_err(|_| "OpenCode service state is invalid".to_string())?;
         let url = json["url"]
@@ -53,11 +61,20 @@ impl OpenCodeClient {
     async fn get(&self, path: &str) -> Result<Value, String> {
         let url = self.base.join(path).map_err(|e| e.to_string())?;
         self.http
-            .get(url)
+            .get(url.clone())
             .basic_auth("opencode", Some(&self.password))
             .send()
             .await
-            .map_err(|e| format!("OpenCode service request failed: {e}"))?
+            .map_err(|e| {
+                // A refused connection means the service is gone rather than
+                // busy, which is a different thing from a service that
+                // answered and reported an error.
+                if e.is_connect() {
+                    format!("{SERVICE_NOT_RUNNING}: {url}")
+                } else {
+                    format!("OpenCode service request failed: {e}")
+                }
+            })?
             .error_for_status()
             .map_err(|e| format!("OpenCode service returned an error: {e}"))?
             .json()
@@ -297,6 +314,25 @@ mod tests {
         )
         .is_none());
         assert!(recovery_error(&serde_json::json!({"type":"idle","outcome":"failed","error":{"status":403,"message":"Permission denied"}})).is_none());
+    }
+
+    #[test]
+    fn a_refused_connection_reports_that_the_shared_service_is_gone() {
+        // Bind a port and release it, so nothing is listening on it.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let client = OpenCodeClient {
+            http: reqwest::Client::new(),
+            base: Url::parse(&format!("http://{address}")).unwrap(),
+            password: "test".into(),
+            service_pid: 1,
+        };
+        let error = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(client.active_ids())
+            .unwrap_err();
+        assert!(service_is_gone(&error), "unexpected error: {error}");
     }
 
     #[test]

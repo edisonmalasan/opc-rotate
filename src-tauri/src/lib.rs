@@ -937,8 +937,14 @@ async fn busy_session_count(controller: &Arc<Controller>) -> Result<usize, Strin
     }
     let mut busy = live.busy.len();
     match opencode::OpenCodeClient::discover(controller.http.clone()) {
-        Ok(client) => busy += client.active_ids().await?.len(),
-        Err(error) if error == "OpenCode shared service is not running" => {}
+        Ok(client) => match client.active_ids().await {
+            Ok(ids) => busy += ids.len(),
+            // A shared service that is gone has no live sessions of its own,
+            // so it cannot be protecting any work.
+            Err(error) if opencode::service_is_gone(&error) => {}
+            Err(error) => return Err(error),
+        },
+        Err(error) if opencode::service_is_gone(&error) => {}
         Err(error) => return Err(error),
     }
     let orca_targets = controller.inner.lock().await.orca_sessions.clone();
