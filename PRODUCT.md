@@ -44,6 +44,7 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - Leases refresh every two seconds and expire after eight seconds. A closed tab disappears but an already observed incident stays visible, labeled **Closed tab**, with no delivery route until it is reopened.
 - Sessions are deduplicated by exact session ID, never by project directory. Orca and outside clients are listed as separate sources.
 - The shared service is a fallback for responding sessions, not for idle presence. Unknown execution status is never rendered as Idle.
+- A shared service that is gone is reported as gone rather than as a failed request, and it cannot protect any work: a refused connection means no shared-service session is live, so it does not block a route change. A service that answers and reports an error, or that times out, still blocks one.
 - A session that finished its turn is reported as **Worker Idle**, together with the number of child sessions still executing. Both come from the live CLI plugin alone: only that client can see a session's child sessions and can tell the operator's own message apart from one the app delivered. The shared-service fallback keeps its previous behavior and reports only rate limits, busy, and idle — never a finished turn.
 - The plugin remembers the prompts it delivered itself, so a stop is continued once, and only again after the operator sends new input.
 
@@ -111,7 +112,7 @@ The mechanism a neighboring product could not copy truthfully is exactness of de
 - `docs/images/dashboard.jpg` — labeled development preview of the workspace with sample data and no live connection.
 - `src/dev-preview.ts` — development-only fixture data, reached through `?preview=1` in the browser; excluded from release assets by `scripts/check-release.mjs`.
 - `release-artifacts/v0.1.0/` — built NSIS installer and matching `SHA256SUMS.txt` (gitignored, not published).
-- Automated coverage: 11 Node presence-plugin tests and 47 Rust unit and mock HTTP tests alongside the source, run by `npm test`.
+- Automated coverage: 11 Node presence-plugin tests and 48 Rust unit and mock HTTP tests alongside the source, run by `npm test`.
 - Verified in the browser preview: both watcher modes, the top-bar **Recovery** control, the inspector's three-option watcher control with its **Default** state, the **Worker Idle** activity state, the subagent count, the **Worker Idle** prompt default, the route bar's absence while nothing depends on the VPN route, and the route line's skipped stations.
 - Verified live, in the running native app: discovery of idle and background tabs in Orca and outside clients, project grouping in the rail, and detection of the free-tier client-gate provider error with monitoring paused.
 - Verified live earlier, using the former terminal-send transport: a recovery that skipped a failed relay candidate.
