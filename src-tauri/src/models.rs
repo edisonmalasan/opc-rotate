@@ -57,6 +57,13 @@ pub struct SessionTarget {
     /// before it continues the same session again.
     #[serde(default)]
     pub continued: bool,
+    /// Identifies the finished turn, so a session can be continued after every
+    /// turn instead of once per operator message.
+    #[serde(default)]
+    pub turn_key: Option<String>,
+    /// Whether this session is continued again after every finished turn.
+    #[serde(default)]
+    pub continue_each_turn: bool,
     /// Child sessions of this session that are still executing.
     #[serde(default)]
     pub working_subagents: u32,
@@ -104,6 +111,9 @@ pub struct Settings {
     /// The watcher mode every session follows unless it overrides it.
     #[serde(default = "default_watcher")]
     pub watcher: String,
+    /// The sessions that are continued again after every finished turn.
+    #[serde(default)]
+    pub session_continue_each_turn: std::collections::HashMap<String, bool>,
     #[serde(default)]
     pub session_watcher: std::collections::HashMap<String, String>,
     /// The prompt sent to a session that simply finished its turn.
@@ -180,6 +190,14 @@ impl Settings {
         self.watcher_for(target) == WATCH_WORKER_IDLE
     }
 
+    /// Whether this session is continued again after every finished turn.
+    pub fn continues_each_turn(&self, target: &SessionTarget) -> bool {
+        self.session_continue_each_turn
+            .get(&target.id)
+            .copied()
+            .unwrap_or(false)
+    }
+
     /// Whether anything at all still needs the public IP to change.
     pub fn rate_limit_watchers(&self, targets: &[SessionTarget]) -> bool {
         self.watcher == WATCH_RATE_LIMIT
@@ -211,6 +229,7 @@ impl Default for Settings {
             global_prompt: DEFAULT_PROMPT.to_string(),
             prompt_overrides: Default::default(),
             watcher: WATCH_WORKER_IDLE.to_string(),
+            session_continue_each_turn: Default::default(),
             session_watcher: Default::default(),
             prompt_version: 1,
             managed_profile: None,

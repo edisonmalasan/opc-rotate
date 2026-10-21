@@ -262,6 +262,9 @@ pub fn merge_orca(presence: &mut Presence, legacy: &[SessionTarget]) -> Vec<Sess
 pub enum Delivery {
     Accepted(String),
     Busy,
+    /// The client refused the request before anything was delivered, so the
+    /// request may be sent again.
+    Refused(String),
 }
 
 pub async fn command(
@@ -337,6 +340,14 @@ async fn command_at(
                         .ok_or("OpenCode receipt is invalid".into())
                 }
                 Some("busy") => return Ok(Delivery::Busy),
+                Some("refused") => {
+                    return Ok(Delivery::Refused(
+                        value["error"]
+                            .as_str()
+                            .unwrap_or("OpenCode request was refused")
+                            .into(),
+                    ))
+                }
                 Some("rejected") => {
                     return Err(value["error"]
                         .as_str()

@@ -165,6 +165,11 @@ function StateLabel({ state, error }: { state: string; error?: string | null }) 
 const CONTINUED_EXPLANATION =
   "Continued once for this stop. Send a new message in the session and it will be continued again.";
 
+/** Why a session that is idle is not being continued again, when the session
+ * is continued after every finished turn. */
+const CONTINUED_EACH_TURN_EXPLANATION =
+  "Continued after the last finished turn. It is continued again after every turn.";
+
 const recoveryLabels: Record<string, string> = {
   queued: "Queued", waiting: "Waiting for work", cooldown: "Retry eligible",
   checking: "Checking route", disconnecting: "Switching VPN", connecting: "Connecting VPN",
@@ -469,6 +474,7 @@ function SessionInspector({
   onEdit,
   onEditDefault,
   onUseDefault,
+  onContinueEachTurn,
   run,
 }: {
   target: SessionTarget | null;
@@ -479,6 +485,7 @@ function SessionInspector({
   onEdit: (target: SessionTarget, instant: boolean) => void;
   onEditDefault: () => void;
   onUseDefault: (target: SessionTarget) => void;
+  onContinueEachTurn: (target: SessionTarget, enabled: boolean) => void;
   run: RunCommand;
 }) {
   if (!target)
@@ -502,6 +509,7 @@ function SessionInspector({
   const workerIdleMode = sessionWatcher === WATCH_WORKER_IDLE;
   // The session is idle and has already been continued for this stop.
   const continued = workerIdleMode && !!target.continued;
+  const eachTurn = !!target.continueEachTurn;
   const effectivePrompt = target.promptOverride ?? snapshot.globalPrompt;
   // A session waiting for its client is not in progress: the operator can
   // still start it by hand.
@@ -512,7 +520,9 @@ function SessionInspector({
   const recoveryExplanation = !monitored && !showProgress
     ? "Enable this session below to include it in recovery."
     : continued
-      ? CONTINUED_EXPLANATION
+      ? eachTurn
+        ? CONTINUED_EACH_TURN_EXPLANATION
+        : CONTINUED_EXPLANATION
       : stopped && monitored
         ? "The provider still rejected work after two verified IP changes. You can start another attempt manually."
         : showProgress ? progress.detail
@@ -633,6 +643,20 @@ function SessionInspector({
                 : "Overridden for this session"}
             </span>
           </div>
+          <label className="monitor-setting">
+            <span>
+              Continue again after each finished turn
+              <small>Keeps the session working instead of waiting for your next message.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={eachTurn}
+              disabled={pending !== null}
+              onChange={(event) =>
+                onContinueEachTurn(target, event.target.checked)
+              }
+            />
+          </label>
           <label className="monitor-setting">
             <span>Monitor this session</span>
             <input
@@ -1298,6 +1322,21 @@ function App() {
             ...current,
             preferredServer: args?.serverId as string | null,
           };
+        if (command === "set_continue_each_turn") {
+          const sessions = [
+            ...current.orcaSessions,
+            ...current.otherSessions,
+          ].map((session) =>
+            session.id === args?.targetId
+              ? { ...session, continueEachTurn: args?.enabled as boolean }
+              : session,
+          );
+          return {
+            ...current,
+            orcaSessions: sessions.slice(0, current.orcaSessions.length),
+            otherSessions: sessions.slice(current.orcaSessions.length),
+          };
+        }
         if (command === "set_global_prompt")
           return { ...current, globalPrompt: args?.prompt as string };
         if (command === "set_watcher")
@@ -1817,6 +1856,12 @@ function App() {
                   void run("set_prompt_override", {
                     targetId: target.id,
                     prompt: null,
+                  })
+                }
+                onContinueEachTurn={(target, enabled) =>
+                  void run("set_continue_each_turn", {
+                    targetId: target.id,
+                    enabled,
                   })
                 }
                 run={run}

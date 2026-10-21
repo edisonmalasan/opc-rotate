@@ -98,6 +98,10 @@ export default {
     const appMessages = new Map();
     // The last operator message seen for a session, kept per finished turn.
     const stopKeys = new Map();
+    // The last operator message id seen for a session, kept across turns. A
+    // long turn can push the operator's own message out of the recent list,
+    // and the key must not disappear with it.
+    const operatorKeys = new Map();
 
     const appMessageIds = (sessionID) => {
       let ids = appMessages.get(sessionID);
@@ -125,7 +129,7 @@ export default {
       try {
         const list = payload(
           await context.client.message.list(
-            { sessionID, limit: 12, order: "desc" },
+            { sessionID, limit: 100, order: "desc" },
             options(),
           ),
         );
@@ -191,6 +195,8 @@ export default {
                     sessionID,
                     appMessageIds(sessionID),
                   );
+                  if (stopKey) operatorKeys.set(sessionID, stopKey);
+                  else stopKey = operatorKeys.get(sessionID) ?? null;
                   stopKeys.set(sessionID, { turn: latest.id, key: stopKey });
                 }
               } else stopKeys.delete(sessionID);
@@ -210,6 +216,10 @@ export default {
                 errorKey:
                   error && latest?.id ? `api:${sessionID}:${latest.id}` : null,
                 stopKey: stopKey ? `stop:${sessionID}:${stopKey}` : null,
+                turnKey:
+                  stopped && latest?.id
+                    ? `turn:${sessionID}:${latest.id}`
+                    : null,
                 workingSubagents,
                 updatedAt: info.time?.updated ?? Date.now(),
               };
@@ -303,6 +313,7 @@ export default {
             unlinkSync(path);
           } catch {}
           let reply;
+          let attempted = false;
           try {
             if (
               request.clientId !== clientId ||
@@ -348,6 +359,7 @@ export default {
                   !openTabs(context).ids.includes(request.sessionID)
                 )
                   throw new Error("The requested session is no longer open");
+                attempted = true;
                 const receipt = payload(
                   await context.client.session.prompt(
                     { sessionID: request.sessionID, text: request.prompt },
@@ -365,8 +377,11 @@ export default {
               }
             } else throw new Error("Unsupported request");
           } catch (error) {
+            // A request refused before the prompt was attempted is not a
+            // delivery, so the app may try again. A failure after the attempt
+            // is uncertain and is never retried on its own.
             reply = {
-              status: "rejected",
+              status: attempted ? "rejected" : "refused",
               error: String(error.message).slice(0, 500),
             };
           }

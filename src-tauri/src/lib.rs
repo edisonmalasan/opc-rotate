@@ -437,12 +437,14 @@ async fn refresh_catalog(app: &AppHandle, controller: &Arc<Controller>) -> Resul
 /// A stop is continued once. A session that has already been continued for
 /// the stop it is on is waiting for new operator input, and the interface
 /// says so rather than leaving it looking unhandled.
-fn mark_continued(targets: &mut [SessionTarget], handled: &HashSet<String>) {
+fn mark_continued(
+    targets: &mut [SessionTarget],
+    handled: &HashSet<String>,
+    settings: &models::Settings,
+) {
     for target in targets.iter_mut() {
-        target.continued = target
-            .stop_key
-            .as_ref()
-            .is_some_and(|key| handled.contains(key));
+        target.continued = continue_key(settings, target).is_some_and(|key| handled.contains(&key));
+        target.continue_each_turn = settings.continues_each_turn(target);
     }
 }
 
@@ -527,8 +529,9 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
         for target in inner.other_sessions.iter_mut() {
             target.prompt_override = overrides.get(&target.id).cloned();
         }
-        mark_continued(&mut inner.orca_sessions, &handled);
-        mark_continued(&mut inner.other_sessions, &handled);
+        let settings = inner.settings.clone();
+        mark_continued(&mut inner.orca_sessions, &handled, &settings);
+        mark_continued(&mut inner.other_sessions, &handled, &settings);
         let bindings = inner
             .orca_sessions
             .iter()
@@ -562,6 +565,18 @@ async fn scan_sessions(app: &AppHandle, controller: &Arc<Controller>) {
     start_recovery_if_needed(app.clone(), controller.clone()).await;
 }
 
+/// The key that identifies a stop. A session watched for every finished
+/// turn is identified by its turn, so it is continued again after each turn.
+/// A session watched once per operator message is identified by the operator's
+/// own last message, so its own prompt never counts as new input.
+fn continue_key(settings: &models::Settings, target: &SessionTarget) -> Option<String> {
+    if settings.continues_each_turn(target) {
+        target.turn_key.clone().or_else(|| target.stop_key.clone())
+    } else {
+        target.stop_key.clone()
+    }
+}
+
 fn queue_incidents(inner: &mut Inner) -> Vec<String> {
     let mut new_incidents = Vec::new();
     let targets = inner
@@ -588,7 +603,7 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
                 inner.continue_pending.remove(&target.id);
                 continue;
             }
-            let Some(key) = target.stop_key.clone() else {
+            let Some(key) = continue_key(&inner.settings, &target) else {
                 continue;
             };
             if (target.via_plugin && target.client_id.is_none())
@@ -1115,9 +1130,10 @@ async fn continue_stopped(app: &AppHandle, controller: &Arc<Controller>, pending
                 );
                 continue;
             }
-            // One continuation per stop: the operator's own message identifies it.
-            if let Some(key) = &target.stop_key {
-                inner.handled.insert(key.clone());
+            // One continuation per stop. The claim is released again if the
+            // client refuses the request before anything is delivered.
+            if let Some(key) = continue_key(&inner.settings, &target) {
+                inner.handled.insert(key);
             }
             inner.continue_pending.remove(id);
             inner.progress_ip(
@@ -1146,6 +1162,33 @@ async fn continue_stopped(app: &AppHandle, controller: &Arc<Controller>, pending
                     None,
                     false,
                 );
+            }
+            Ok(presence::Delivery::Refused(error)) => {
+                // Nothing was delivered, so the stop is not claimed and the
+                // session is queued again on the next scan.
+                let mut inner = controller.inner.lock().await;
+                if let Some(key) = continue_key(&inner.settings, &target) {
+                    inner.handled.remove(&key);
+                }
+                inner.continue_pending.remove(id);
+                inner.progress_ip(
+                    id,
+                    "blocked",
+                    format!("The client refused the prompt: {error}"),
+                    None,
+                    false,
+                );
+                drop(inner);
+                controller
+                    .record(
+                        app,
+                        "warning",
+                        format!(
+                            "The client refused the prompt for {}: {error}",
+                            target.title
+                        ),
+                    )
+                    .await;
             }
             Ok(presence::Delivery::Accepted(receipt)) => {
                 let mut inner = controller.inner.lock().await;
@@ -1325,6 +1368,33 @@ async fn resume_pending(app: &AppHandle, controller: &Arc<Controller>, pending: 
                 controller.emit(app).await;
                 continue;
             }
+            Ok(presence::Delivery::Refused(error)) => {
+                // Nothing was delivered, so the incident is released and the
+                // prompt is sent again on the verified address.
+                let mut inner = controller.inner.lock().await;
+                if let Some(key) = &target.error_key {
+                    inner.handled.remove(key);
+                }
+                inner.pending.insert(id.clone());
+                inner.ready_to_resume.insert(id.clone());
+                inner.progress(
+                    id,
+                    "waiting-target",
+                    format!("The client refused the prompt: {error}"),
+                    None,
+                );
+                drop(inner);
+                controller
+                    .record(
+                        app,
+                        "warning",
+                        format!(
+                            "The client refused the prompt for {}: {error}",
+                            target.title
+                        ),
+                    )
+                    .await;
+            }
             Ok(presence::Delivery::Accepted(receipt)) => {
                 let mut inner = controller.inner.lock().await;
                 inner.last_recovery_at.insert(id.clone(), process::now_ms());
@@ -1503,6 +1573,34 @@ async fn set_session_monitoring(
     Ok(state.snapshot().await)
 }
 
+/// Whether a session is continued again after every finished turn, rather
+/// than once and then waiting for the operator's next message.
+#[tauri::command]
+async fn set_continue_each_turn(
+    app: AppHandle,
+    state: State<'_, Arc<Controller>>,
+    target_id: String,
+    enabled: bool,
+) -> Result<Snapshot, String> {
+    {
+        let mut inner = state.inner.lock().await;
+        if inner.target(&target_id).is_none() {
+            return Err("Session was not found".into());
+        }
+        if enabled {
+            inner
+                .settings
+                .session_continue_each_turn
+                .insert(target_id, true);
+        } else {
+            inner.settings.session_continue_each_turn.remove(&target_id);
+        }
+    }
+    state.save().await;
+    state.emit(&app).await;
+    scan_sessions(&app, state.inner()).await;
+    Ok(state.snapshot().await)
+}
 #[tauri::command]
 async fn set_global_prompt(
     app: AppHandle,
@@ -1659,6 +1757,7 @@ async fn select_session_tab(
         .target(&target_id)
         .ok_or("Session was not found")?;
     match presence::command(&target, "focus", None).await? {
+        presence::Delivery::Refused(error) => return Err(error),
         presence::Delivery::Accepted(_) => {
             if let Some(handle) = target.orca_handle.as_deref() {
                 orca::select_terminal(handle).await?;
@@ -1776,6 +1875,7 @@ pub fn run() {
             set_session_monitoring,
             set_global_prompt,
             set_prompt_override,
+            set_continue_each_turn,
             set_watcher,
             set_session_watcher,
             set_preferred_server,
@@ -2077,13 +2177,43 @@ mod tests {
         let handled = ["stop:api:one:operator-1".to_string()]
             .into_iter()
             .collect::<HashSet<String>>();
-        mark_continued(&mut targets, &handled);
+        mark_continued(&mut targets, &handled, &Settings::default());
 
         // The stop that was continued is marked, the one that was not is not,
         // and a session with no stop at all is left alone.
         assert!(targets[0].continued);
         assert!(!targets[1].continued);
         assert!(!targets[2].continued);
+    }
+
+    #[test]
+    fn a_session_watched_for_every_turn_is_identified_by_its_turn() {
+        let mut state = inner();
+        state
+            .settings
+            .session_continue_each_turn
+            .insert("api:one".into(), true);
+        let target = SessionTarget {
+            id: "api:one".into(),
+            stop_key: Some("stop:api:one:operator-1".into()),
+            turn_key: Some("turn:api:one:turn-1".into()),
+            ..Default::default()
+        };
+
+        // With the turn key, a new turn is a new stop, so the session is
+        // continued again after every finished turn.
+        assert_eq!(
+            continue_key(&state.settings, &target),
+            Some("turn:api:one:turn-1".into())
+        );
+        state
+            .settings
+            .session_continue_each_turn
+            .insert("api:one".into(), false);
+        assert_eq!(
+            continue_key(&state.settings, &target),
+            Some("stop:api:one:operator-1".into())
+        );
     }
 
     #[test]

@@ -33,6 +33,8 @@ export type SessionTarget = {
   workingSubagents?: number;
   /** Whether this session has already been continued for the stop it is on. */
   continued?: boolean;
+  /** Whether this session is continued again after every finished turn. */
+  continueEachTurn?: boolean;
 };
 
 export type HistoryEntry = { at: number; level: string; message: string };

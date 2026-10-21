@@ -167,6 +167,7 @@ export function createPreviewSnapshot(): Snapshot {
             ? null
             : "stop:preview-session-6:msg_operator_1",
         continued: !recoveryPreview && !ratePreview,
+        continueEachTurn: !recoveryPreview && !ratePreview,
         promptOverride: null,
         updatedAt: now - 24000,
       },

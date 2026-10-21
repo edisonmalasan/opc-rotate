@@ -239,10 +239,61 @@ test("rejects closed, expired, and replacement-client requests", async (t) => {
   ]) {
     assert.equal(
       (await f.request(sessionID, "prompt", extra)).reply.status,
-      "rejected",
+      "refused",
     );
   }
   assert.equal(f.prompts.length, 0);
+});
+
+
+
+
+
+
+
+test("the stop key survives a long turn and the turn is reported", async (t) => {
+  const f = await fixture(t);
+  f.context.client.message.list = async ({ sessionID }) => ({
+    data:
+      sessionID === "ses_one"
+        ? [
+            { id: "turn_1", type: "idle", outcome: "succeeded" },
+            { id: "msg_operator", type: "user" },
+          ]
+        : [],
+  });
+  await f.tick(2000);
+  const first = f
+    .read()
+    .sessions.find((session) => session.sessionID === "ses_one");
+  assert.ok(first.stopKey, "a stopped session reports a stop key");
+  assert.ok(first.turnKey, "a stopped session reports its turn");
+
+  // This client delivers a prompt, so the message it created is not the
+  // operator's own.
+  f.context.client.session.prompt = async (input) => {
+    f.prompts.push(input);
+    return { id: "msg_delivered" };
+  };
+  await f.request("ses_one", "prompt");
+
+  // The next turn ends and the operator's own message is no longer in the
+  // recent list. The key must not disappear with it.
+  f.context.client.message.list = async ({ sessionID }) => ({
+    data:
+      sessionID === "ses_one"
+        ? [
+            { id: "turn_2", type: "idle", outcome: "succeeded" },
+            { id: "msg_delivered", type: "user" },
+          ]
+        : [],
+  });
+  await f.tick(2000);
+  const second = f
+    .read()
+    .sessions.find((session) => session.sessionID === "ses_one");
+  assert.equal(second.stopKey, first.stopKey);
+  assert.notEqual(second.turnKey, first.turnKey);
 });
 
 test("focusing one tab preserves the other open tabs", async (t) => {
@@ -265,7 +316,7 @@ test("closed tabs disappear; disconnected services remain live with unknown stat
   await f.tick(2000);
   assert.equal(f.read().statusKnown, false);
   assert.equal(f.read().sessions[0].state, "unknown");
-  assert.equal((await f.request("ses_one")).reply.status, "rejected");
+  assert.equal((await f.request("ses_one")).reply.status, "refused");
   assert.equal(f.prompts.length, 0);
 });
 
