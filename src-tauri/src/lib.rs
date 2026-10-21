@@ -600,13 +600,19 @@ fn queue_incidents(inner: &mut Inner) -> Vec<String> {
                 continue;
             }
             inner.continue_pending.insert(target.id.clone());
-            inner.progress_ip(
-                &target.id,
-                "queued",
-                "Queued to continue this session with a prompt; the public IP is not changed",
-                None,
-                false,
-            );
+            if !inner
+                .recovery
+                .get(&target.id)
+                .is_some_and(|progress| progress.stage == "blocked")
+            {
+                inner.progress_ip(
+                    &target.id,
+                    "queued",
+                    "Queued to continue this session with a prompt; the public IP is not changed",
+                    None,
+                    false,
+                );
+            }
             new_incidents.push(target.title.clone());
             continue;
         }
@@ -1077,6 +1083,7 @@ async fn continue_stopped(app: &AppHandle, controller: &Arc<Controller>, pending
                         .recovery
                         .get(id)
                         .is_some_and(|progress| progress.stage == "blocked");
+                    inner.continue_pending.remove(id);
                     inner.progress_ip(id, "blocked", &detail, None, false);
                     drop(inner);
                     if first_time {
