@@ -38,6 +38,8 @@ All choices are saved. The app-wide mode starts on **Worker Idle**, so a fresh i
 
 A finished turn is continued **once**. After the prompt is delivered the session is quiet again, and the recovery column reads **Continued** rather than **Prompt sent**; the inspector says that it is continued again after you send a new message in that session. This is deliberate: continuing every finished turn would have the app prompt a session, wait for it to finish, and prompt it again, forever.
 
+Only a prompt that was actually delivered counts as a continuation. If the session's client cannot take the prompt, the stage reads **Waiting for client**, the session stays queued, and Recovery tries again on the next scan. **Continue session** in the inspector starts it by hand at any time.
+
 The two modes are exclusive per session. A session watched for finished turns that hits a rate limit is still shown as **Rate limited**, but it is not recovered automatically, because a prompt cannot clear a rate limit. A manual recovery follows the session's mode: **Continue session** queues a prompt-only continuation, and **Recover session** queues a route change.
 
 Changing one session's mode cancels the other kind of work queued for it. A session switched to **Worker Idle** no longer keeps a queued route change, and one switched to **Rate limits** no longer keeps a queued continuation.
