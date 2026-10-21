@@ -445,7 +445,11 @@ function SessionItem({
                 )}
               </span>
             </>
-          ) : <span className="recovery-idle">{!monitored ? "Not monitored" : monitoring ? "Watching" : "Paused"}</span>}
+          ) : target.continued ? (
+            <span className="recovery-status bare sent">Continued</span>
+          ) : (
+            <span className="recovery-idle">{!monitored ? "Not monitored" : monitoring ? "Watching" : "Paused"}</span>
+          )}
         </span>
         <time dateTime={new Date(target.updatedAt).toISOString()}>
           {timeAgo(target.updatedAt)}
@@ -499,7 +503,10 @@ function SessionInspector({
   // The session is idle and has already been continued for this stop.
   const continued = workerIdleMode && !!target.continued;
   const effectivePrompt = target.promptOverride ?? snapshot.globalPrompt;
-  const inProgress = !!progress && activeRecovery.has(progress.stage);
+  // A session waiting for its client is not in progress: the operator can
+  // still start it by hand.
+  const inProgress =
+    !!progress && activeRecovery.has(progress.stage) && progress.stage !== "blocked";
   const stopped = progress?.stage === "stopped";
   const showProgress = !!progress && (monitored || ["sending", "sent", "uncertain"].includes(progress.stage));
   const recoveryExplanation = !monitored && !showProgress
@@ -1218,6 +1225,12 @@ function App() {
     [...snapshot.orcaSessions, ...snapshot.otherSessions].some(
       (session) => watcherFor(snapshot, session) === WATCH_RATE_LIMIT,
     );
+  const watcherLabel =
+    globalWatcher === WATCH_WORKER_IDLE
+      ? rateLimitRelevant
+        ? "Watching for finished turns and rate limits"
+        : "Watching for finished turns"
+      : "Watching for rate limits";
   const relays = useMemo(() => {
     const result = snapshot.servers.filter((server) =>
       `${countryName(server.country)} ${server.host} ${server.ip}`
@@ -2033,7 +2046,7 @@ function App() {
             {recovering
               ? snapshot.phase
               : snapshot.monitoring
-                ? "Watching for rate limits"
+                ? watcherLabel
                 : "Monitoring paused"}
           </span>
         </footer>

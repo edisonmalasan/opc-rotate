@@ -27,6 +27,10 @@ struct Persisted {
     connected_server: Option<VpnServer>,
     #[serde(default)]
     handled: HashSet<String>,
+    /// Bumped when the meaning of the handled records changed, so a record
+    /// written under the older meaning is cleared exactly once.
+    #[serde(default)]
+    handled_version: u32,
     #[serde(default)]
     ip_attempts: HashMap<String, u8>,
 }
@@ -50,6 +54,7 @@ struct Inner {
     continue_pending: HashSet<String>,
     ready_to_resume: HashSet<String>,
     handled: HashSet<String>,
+    handled_version: u32,
     ip_attempts: HashMap<String, u8>,
     last_recovery_at: HashMap<String, u64>,
     recovery_running: bool,
@@ -215,7 +220,7 @@ impl Inner {
             // The route only matters while a relay is connected, a recovery
             // still has to change the public IP, or some session still watches
             // rate limits.
-            vpn_needed: self.connected_server.is_some()
+            vpn_needed: (self.connected_server.is_some() && self.vpn_status == "connected")
                 || self.recovery.values().any(|progress| progress.changes_ip)
                 || self.settings.rate_limit_watchers(
                     &self
@@ -236,6 +241,7 @@ impl Inner {
             history: self.history.clone(),
             connected_server: self.connected_server.clone(),
             handled: self.handled.clone(),
+            handled_version: self.handled_version,
             ip_attempts: self.ip_attempts.clone(),
         }
     }
@@ -267,6 +273,17 @@ struct Controller {
     settings_path: PathBuf,
 }
 
+/// The app used to record a stop as handled even when it had not delivered
+/// the prompt, which left a session that was never continued looking as if it
+/// had been. Those records are cleared once, so the affected sessions are
+/// continued again.
+fn migrate_handled(persisted: &mut Persisted) {
+    if persisted.handled_version < 1 {
+        persisted.handled.retain(|key| !key.starts_with("stop:"));
+        persisted.handled_version = 1;
+    }
+}
+
 fn write_settings_file(path: &std::path::Path, data: &Persisted) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -292,12 +309,11 @@ impl Controller {
         let persisted_before = persisted.clone();
         persisted.settings.migrate_default_prompt();
         persisted.settings.migrate_watcher();
-        // The prompt migration replaces a saved prompt, so it has to be
-        // written out now. Otherwise it would run again on every start and
-        // discard whatever the operator wrote afterwards.
-        if serde_json::to_string(&persisted.settings).ok()
-            != serde_json::to_string(&persisted_before.settings).ok()
-        {
+        migrate_handled(&mut persisted);
+        // A migration replaces saved data, so it has to be written out now.
+        // Otherwise it would run again on every start and discard whatever
+        // the operator wrote afterwards.
+        if serde_json::to_string(&persisted).ok() != serde_json::to_string(&persisted_before).ok() {
             write_settings_file(&settings_path, &persisted);
         }
         let http = reqwest::Client::builder()
@@ -329,6 +345,7 @@ impl Controller {
                 continue_pending: HashSet::new(),
                 ready_to_resume: HashSet::new(),
                 handled: persisted.handled,
+                handled_version: persisted.handled_version,
                 ip_attempts: persisted.ip_attempts,
                 last_recovery_at: HashMap::new(),
                 recovery_running: false,
@@ -1050,28 +1067,28 @@ async fn continue_stopped(app: &AppHandle, controller: &Arc<Controller>, pending
                 continue;
             }
             Err(error) => {
+                // Nothing was delivered, so the stop is not handled. The
+                // session stays queued and the next scan tries again, and the
+                // operator can still start it by hand.
+                let detail = format!("Waiting to continue: {error}");
                 let mut inner = controller.inner.lock().await;
                 if inner.continue_pending.contains(id) && inner.pause_epoch == pause_epoch {
-                    if let Some(key) = &target.stop_key {
-                        inner.handled.insert(key.clone());
+                    let first_time = !inner
+                        .recovery
+                        .get(id)
+                        .is_some_and(|progress| progress.stage == "blocked");
+                    inner.progress_ip(id, "blocked", &detail, None, false);
+                    drop(inner);
+                    if first_time {
+                        controller
+                            .record(
+                                app,
+                                "warning",
+                                format!("Waiting to continue {}: {error}", target.title),
+                            )
+                            .await;
                     }
-                    inner.continue_pending.remove(id);
-                    inner.progress_ip(
-                        id,
-                        "blocked",
-                        format!("Waiting to continue: {error}"),
-                        None,
-                        false,
-                    );
                 }
-                drop(inner);
-                controller
-                    .record(
-                        app,
-                        "warning",
-                        format!("Waiting to continue {}: {error}", target.title),
-                    )
-                    .await;
                 continue;
             }
         };
@@ -1795,6 +1812,7 @@ mod tests {
     fn inner() -> Inner {
         Inner {
             recovery: HashMap::new(),
+            handled_version: 1,
             settings: Settings {
                 monitoring: true,
                 // Most controller tests exercise the rate-limit path.
@@ -2059,6 +2077,32 @@ mod tests {
         assert!(targets[0].continued);
         assert!(!targets[1].continued);
         assert!(!targets[2].continued);
+    }
+
+    #[test]
+    fn the_record_of_continued_stops_is_cleared_once() {
+        let mut persisted = Persisted {
+            handled: [
+                "stop:api:one:operator-1".to_string(),
+                "api:api:two:message-1".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+            ..Persisted::default()
+        };
+        migrate_handled(&mut persisted);
+        // The stop records were written even when nothing was delivered, so
+        // they are cleared. The incident records are kept.
+        assert!(!persisted.handled.contains("stop:api:one:operator-1"));
+        assert!(persisted.handled.contains("api:api:two:message-1"));
+        assert_eq!(persisted.handled_version, 1);
+
+        // A stop recorded afterwards is kept.
+        persisted
+            .handled
+            .insert("stop:api:one:operator-2".to_string());
+        migrate_handled(&mut persisted);
+        assert!(persisted.handled.contains("stop:api:one:operator-2"));
     }
 
     #[test]
