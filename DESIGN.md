@@ -463,6 +463,7 @@ Borders are directional where they appear at all: a dark top edge and a faint li
 ### Watcher Choice
 - **Shape:** two controls. The app-wide one is a single button in the toolbar, immediately beside the Monitoring switch, reading **Recovery** followed by the current mode. The per-session one is a three-option segmented control in the inspector: **Rate limits**, **Worker Idle**, **Default**, with a note that says whether the session is following the app-wide mode or has its own. The label, the control and the note each sit on their own line, so nothing in the row can stretch and a mode button never grows a tall block.
 - **Rule:** the two modes are **Rate limits** and **Worker Idle**, and the choice is never a colour. A watcher that does not touch the network is also the one that removes the VPN route from the screen, and the interface says so by having nothing to show.
+- **Continue again after each finished turn:** a plain checkbox below the choice, with the reason in one line. It changes when a session is continued again, so the sentence beside it says which rule applies.
 
 ### Continuation Prompt
 - **Shape:** one prompt, not one per mode. The inspector shows the prompt that will actually be sent, with a plain line beneath it: **Used by every session** beside **Edit the default**, or **This session's own prompt** beside **Use the default**.

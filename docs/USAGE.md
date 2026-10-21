@@ -40,6 +40,8 @@ A finished turn is continued **once**. After the prompt is delivered the session
 
 Only a prompt that was actually delivered counts as a continuation. If the session's client cannot take the prompt, the stage reads **Waiting for client**, the session stays queued, and Recovery tries again on the next scan. **Continue session** in the inspector starts it by hand at any time.
 
+**Continue again after each finished turn**, in the session inspector's **Monitoring** section, changes the rule for that session. By default a session is continued once per message you write, so the app's own prompt does not count as new input and the session waits for you. With the option on, the session is continued after every finished turn instead, which keeps a long job working without you. Turn it on for the sessions that should run on their own, and leave it off for the ones that should wait for you.
+
 The two modes are exclusive per session. A session watched for finished turns that hits a rate limit is still shown as **Rate limited**, but it is not recovered automatically, because a prompt cannot clear a rate limit. A manual recovery follows the session's mode: **Continue session** queues a prompt-only continuation, and **Recover session** queues a route change.
 
 Changing one session's mode cancels the other kind of work queued for it. A session switched to **Worker Idle** no longer keeps a queued route change, and one switched to **Rate limits** no longer keeps a queued continuation.
